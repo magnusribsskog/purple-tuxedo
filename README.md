@@ -1,0 +1,108 @@
+# Purple Tuxedo of Shame
+
+A Chrome extension that makes Reddit threads worth reading, and quietly fixes
+the grammar on everything else.
+
+On Reddit, it hides low-effort comments, unless someone replied with
+something worth reading. Then the lazy comment stays, wearing a tuxedo of
+shame 🤵‍♂️, and the reply that saved the thread gets a gold star ⭐.
+
+Everywhere on the web, it repairs the small mistakes that make text hard to
+read: missing apostrophes (`dont` → `don't`), a lowercase `i`, sentences that
+start in lowercase. It never touches slang, links, code or anything you are
+typing.
+
+Everything happens locally in your browser. Nothing is sent anywhere.
+
+---
+
+## How it judges a Reddit comment
+
+Each top-level comment is weighed on two things:
+
+- **Length.** Below a minimum (200 characters by default), it is low-effort.
+- **Slop score.** A tally of missing apostrophes, lowercase `i`, slang and
+  sentences that start in lowercase, scaled by the comment's length. At or above a
+  threshold (15 by default), it is low-effort however long it is.
+
+The score always judges the comment **as its author wrote it**, before any
+grammar fixing.
+
+Then:
+
+| The comment is… | No strong reply below it | A strong reply below it |
+| :--- | :--- | :--- |
+| fine | left alone | left alone |
+| low-effort | hidden | stays, wears 🤵‍♂️; the reply gets ⭐ |
+| low-effort but popular (800+ upvotes) | stays | stays, wears 🤵‍♂️; the reply gets ⭐ |
+
+**A hero saves the thread.** However awful the comment, and however popular,
+a substantive reply keeps it visible. Popularity protects a comment from being
+hidden, never from the tuxedo.
+
+A *strong reply* is a direct reply of real substance: at least 200 characters
+and 35 words, not shouting, not mostly symbols, and in sentences.
+
+## The panel
+
+Click the toolbar icon on a Reddit thread to see what Tux did there and to
+tune it. Changes apply to the open thread at once.
+
+- **This page:** comments judged, hidden (and why), tuxedos, heroes, comments
+  spared by upvotes, paragraphs fixed.
+- **Lookup failures:** comments Tux could not read and therefore left alone.
+  These should be zero. If they climb, Reddit has changed its page structure;
+  Tux degrades by doing nothing rather than by guessing.
+- **Hiding, heroes, upvote immunity:** every threshold above.
+- **What counts as slop:** the word list (each word, whether it counts as
+  grammar or slang, and its points), your own additions, and the weight of
+  each category.
+
+## Grammar fixing, everywhere
+
+Off Reddit, a small pill on the page shows what was fixed and lets you switch
+fixing off for that site. The fixer is deliberately conservative:
+
+- Fixes are made per paragraph, so a word after a link is not mistaken for
+  the start of a sentence.
+- Links, code, form fields and editable text are never changed. On Reddit,
+  quoted text is left alone too: it belongs to someone else.
+- Words that are only mistakes in English are left alone in other languages:
+  `i` in Norwegian, `im` in German.
+- Slang is never rewritten. `idk`, `rn` and `lol` carry tone; changing them
+  would change what the author said.
+- It works inside pages built from shadow DOM, including comment sections
+  that load as you scroll.
+
+## Install
+
+Not yet in the Chrome Web Store.
+
+1. Download or clone this repository.
+2. Open `chrome://extensions` and turn on **Developer mode**.
+3. Click **Load unpacked** and choose the `extension` folder.
+
+Chrome will ask for access to all sites: the grammar fixer needs it to read
+and repair text on the pages you visit. If you also run a separate grammar
+fixing extension, disable one of them.
+
+## Privacy
+
+Purple Tuxedo has no server, no analytics and no network access of its own.
+It reads the page you are on, changes what you see, and stores only your
+settings and per-site on/off choices in your browser.
+
+## Licence
+
+Free for personal use, hobby projects, research, education and nonprofits,
+and for commercial use by organisations of up to 10 people. Larger
+organisations need a commercial licence: contact **magnus.ribsskog@gmail.com**.
+
+The full terms are in [LICENSE](LICENSE): the PolyForm Noncommercial License
+1.0.0, plus the small-organisation permission stated at its top.
+
+## Credits
+
+Made by Magnus Ribsskog, with Florence and Sophie: persistent, multimodal AIs
+running on Claude and Codex. Sophie built the first grammar fixer; Florence
+finished it and brought it to Purple Tuxedo.

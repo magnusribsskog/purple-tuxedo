@@ -1,0 +1,86 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Purple Tuxedo</title>
+<style>
+  :root { --purple: #9b4d96; --gold: #b8860b; --fg: #e8e6ea; --dim: #9a96a0; --bg: #1c1a20; --line: #2f2c35; --red: #e0605a; }
+  body { margin: 0; width: 300px; font: 13px/1.4 system-ui, sans-serif; color: var(--fg); background: var(--bg); }
+  header { padding: 10px 12px; background: var(--purple); display: flex; justify-content: space-between; align-items: baseline; }
+  header b { font-size: 14px; } header span { opacity: .8; font-size: 11px; }
+  section { padding: 8px 12px; border-bottom: 1px solid var(--line); }
+  h2 { margin: 2px 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--dim); }
+  .grid { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; }
+  .grid .n { text-align: right; font-variant-numeric: tabular-nums; }
+  .tux { color: #c58bc1; } .hero { color: #e0b440; }
+  .fail { color: var(--red); font-weight: 600; }
+  .ok { color: var(--dim); }
+  label { display: grid; grid-template-columns: 1fr 64px; align-items: center; gap: 8px; margin: 3px 0; }
+  label.check { grid-template-columns: 1fr auto; }
+  input[type=number] { width: 60px; background: #26232b; color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 2px 4px; }
+  .note { color: var(--dim); font-size: 11px; margin: 4px 0 0; }
+  button { margin-top: 6px; background: transparent; color: var(--dim); border: 1px solid var(--line); border-radius: 4px; padding: 3px 8px; cursor: pointer; }
+  button:hover { color: var(--fg); }
+  #offpage { color: var(--dim); }
+  #words { max-height: 168px; overflow-y: auto; margin: 2px 0 4px; }
+  .w { display: grid; grid-template-columns: 1fr 70px 44px 18px; gap: 4px; align-items: center; margin: 2px 0; }
+  .w input[type=number] { width: 40px; }
+  .w select, .w input[type=text] { background: #26232b; color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 2px 3px; font: inherit; min-width: 0; }
+  .w .x { border: 0; margin: 0; padding: 0; color: var(--dim); }
+  .w .x:hover { color: var(--red); }
+  #add { margin: 0; padding: 2px 6px; }
+</style>
+</head>
+<body>
+<header><b>🤵‍♂️ Purple Tuxedo</b><span id="ver"></span></header>
+
+<section>
+  <h2>This page</h2>
+  <div id="offpage" hidden>No Reddit thread here. Grammar fixing still runs on this site: its own small pill on the page shows what it changed and can switch it off here.</div>
+  <div id="stats" class="grid" hidden></div>
+</section>
+
+<section>
+  <h2>Hiding</h2>
+  <label>Minimum length (chars) <input type="number" data-key="MIN_LENGTH" min="0" step="10"></label>
+  <label class="check">Hide by slop score <input type="checkbox" data-key="ENABLE_NUKE_BY_SCORE"></label>
+  <label>Slop threshold <input type="number" data-key="SCORE_NUKE_THRESHOLD" min="0" step="1"></label>
+</section>
+
+<section>
+  <h2>Heroes</h2>
+  <label>Hero minimum length <input type="number" data-key="CHILD_MIN_LENGTH" min="0" step="10"></label>
+  <label>Hero minimum words <input type="number" data-key="CHILD_MIN_WORDS" min="0" step="1"></label>
+</section>
+
+<section>
+  <h2>Upvote immunity</h2>
+  <label class="check">Never hide popular comments <input type="checkbox" data-key="USE_UPVOTE_IMMUNITY"></label>
+  <label>Popular at (upvotes) <input type="number" data-key="UPVOTE_THRESHOLD" min="0" step="50"></label>
+  <p class="note">Popular comments can still wear the tuxedo if a hero replies.</p>
+</section>
+
+<section>
+  <h2>What counts as slop</h2>
+  <label>Grammar weight <input type="number" data-key="WEIGHT_GRAMMAR" min="0" step="0.1"></label>
+  <label>Slang weight <input type="number" data-key="WEIGHT_SLANG" min="0" step="0.1"></label>
+  <label>Style weight <input type="number" data-key="WEIGHT_STYLE" min="0" step="0.1"></label>
+  <div id="words"></div>
+  <div class="w"><input type="text" id="newWord" placeholder="add a word">
+    <select id="newCat"><option>slang</option><option>grammar</option></select>
+    <input type="number" id="newPts" value="2" min="0" step="1"><button id="add" title="Add">+</button></div>
+  <p class="note">Points per use, scaled by length. Slang is scored, never rewritten.</p>
+</section>
+
+<section>
+  <h2>Display</h2>
+  <label class="check">Fix grammar <input type="checkbox" data-key="ENABLE_GRAMMAR_FIXES"></label>
+  <label class="check">Show slop score on comments <input type="checkbox" data-key="ENABLE_SCORE_DISPLAY"></label>
+  <label class="check">Mark hidden comments <input type="checkbox" data-key="SHOW_PLACEHOLDERS"></label>
+  <button id="reset">Reset to defaults</button>
+  <p class="note">Changes apply to the open thread at once.</p>
+</section>
+
+<script src="popup.js"></script>
+</body>
+</html>
