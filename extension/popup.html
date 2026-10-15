@@ -29,6 +29,8 @@
   .w .x { border: 0; margin: 0; padding: 0; color: var(--dim); }
   .w .x:hover { color: var(--red); }
   #add { margin: 0; padding: 2px 6px; }
+  #parade { margin: 0 8px 0 0; font-weight: 600; color: var(--fg); border-color: var(--purple); }
+  #parade.on { background: var(--purple); color: #fff; }
 </style>
 </head>
 <body>
@@ -38,6 +40,12 @@
   <h2>This page</h2>
   <div id="offpage" hidden>No Reddit thread here. Grammar fixing still runs on this site: its own small pill on the page shows what it changed and can switch it off here.</div>
   <div id="stats" class="grid" hidden></div>
+</section>
+
+<section id="paradeBox" hidden>
+  <button id="parade">🦆 Brainrot Parade</button>
+  <span id="paradeState" class="note"></span>
+  <p class="note">Hides nothing: every verdict gets a stamp, and Mr. Duck rules on it.</p>
 </section>
 
 <section>

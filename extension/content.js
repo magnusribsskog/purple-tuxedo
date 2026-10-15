@@ -26,6 +26,8 @@
  * Text correction is handled by grammar-fixer.js (GrammarFixer, PlaceholderProtector).
  * Slop scoring lives here.
  *
+ * v1.1.0 — the Brainrot Parade: a diagnostic mode, toggled from the panel,
+ *          that hides nothing and stamps every verdict instead.
  * v1.0.0 — first public release.
  */
 
@@ -450,6 +452,16 @@
     // change must judge these, not the text the fixer has since cleaned up.
     const rawTextOf = new WeakMap();
 
+    // The Brainrot Parade (parade.js) is optional: without it, Tux runs as
+    // ever. Its stamps name the verdict in a few loud words.
+    const paradeOn = () => typeof Parade !== 'undefined' && Parade.active;
+    function stampText(reason) {
+        const [kind, detail = ''] = reason.split(' ');
+        if (kind === 'Slop')  return `SLOP ${Math.round(parseFloat(detail.slice(1)))}`;
+        if (kind === 'Short') return `TOO SHORT · ${parseInt(detail.slice(1), 10)}`;
+        return 'COLLAPSED';
+    }
+
     const NukerEngine = {
 
         hideComment(comment, reason = '') {
@@ -630,8 +642,9 @@
             STATS.judged++;
             const collapsed = !cleanText || cleanText.length < 3;
             let reason = collapsed ? 'Collapsed' : null;
+            let score = 0;
             if (!collapsed) {
-                const score = GrammarService.computeScore(GrammarService.analyze(rawText));
+                score = GrammarService.computeScore(GrammarService.analyze(rawText));
                 GrammarService.attachScoreBadge(comment, score);
                 if (CONFIG.ENABLE_NUKE_BY_SCORE && score >= CONFIG.SCORE_NUKE_THRESHOLD) {
                     reason = `Slop (${score.toFixed(1)})`;
@@ -649,11 +662,24 @@
                 if (strongReply) {
                     this.applyShameBadge(comment);
                     this.applyHeroBadge(strongReply);
+                    if (paradeOn()) Parade.saved(comment);
                 } else if (this.hasUpvoteImmunity(comment)) {
                     STATS.sparedByUpvotes++;
+                    if (paradeOn()) Parade.spared(comment, stampText(reason));
+                } else if (paradeOn()) {
+                    // The parade shows the verdict instead of carrying it out.
+                    STATS.hidden[reason.split(' ')[0]]++;
+                    Parade.hit(comment, stampText(reason));
                 } else {
                     this.hideComment(comment, reason);
                 }
+            } else if (paradeOn()) {
+                // Passed. Within a quarter of either line, it barely did.
+                const nearLength = cleanText.length < CONFIG.MIN_LENGTH * 1.25;
+                const nearSlop   = CONFIG.ENABLE_NUKE_BY_SCORE && score >= CONFIG.SCORE_NUKE_THRESHOLD * 0.75;
+                if (nearSlop)        Parade.near(comment, `SLOP ${Math.round(score)}`);
+                else if (nearLength) Parade.near(comment, `${cleanText.length} CHARS`);
+                else                 Parade.dim(comment);
             }
 
             comment.setAttribute('data-processed', 'true');
@@ -690,7 +716,7 @@
                 this.intersectionObserver.observe(el);
             });
 
-            console.log(`Purple Tuxedo of Shame v1.0.0 active`);
+            console.log(`Purple Tuxedo of Shame v1.1.0 active`);
             console.log(` Nuke: <${CONFIG.MIN_LENGTH} chars | Save: ${CONFIG.CHILD_MIN_LENGTH} chars / ${CONFIG.CHILD_MIN_WORDS} words`);
             console.log(` Score threshold: ${CONFIG.SCORE_NUKE_THRESHOLD} | Upvote immunity: ${CONFIG.USE_UPVOTE_IMMUNITY ? `>=${CONFIG.UPVOTE_THRESHOLD}` : 'OFF'}`);
         }
@@ -746,12 +772,15 @@
             .forEach(el => el.remove());
         document.querySelectorAll('.nuked-comment, .hero-reply').forEach(el =>
             el.classList.remove('nuked-comment', 'hero-reply'));
+        if (typeof Parade !== 'undefined') Parade.clear();
         STATS = freshStats();
         document.querySelectorAll('shreddit-comment[data-processed]').forEach(el => {
             el.removeAttribute('data-processed');
             NukerEngine.processComment(el);
         });
     }
+
+    if (typeof Parade !== 'undefined') Parade.setHooks({ onChange: () => reevaluate() });
 
     const processor = new CommentProcessor();
     loadSettings().then(() => processor.start());
@@ -765,8 +794,12 @@
             reevaluate();
         });
         chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+            if (msg?.type === 'tux-parade' && typeof Parade !== 'undefined') {
+                reply(Parade.toggle());   // onChange re-judges the thread
+                return;
+            }
             if (msg?.type !== 'tux-stats') return;
-            reply({ version: '1.0.0', stats: STATS, config: Object.fromEntries(TUNABLE.map(k => [k, CONFIG[k]])),
+            reply({ parade: typeof Parade !== 'undefined' ? Parade.state : null, version: '1.1.0', stats: STATS, config: Object.fromEntries(TUNABLE.map(k => [k, CONFIG[k]])),
                     defaults: { ...DEFAULTS, slopWeights: DEFAULT_SLOP_WEIGHTS }, slopWeights: SLOP_WEIGHTS, comments: document.querySelectorAll('shreddit-comment').length });
         });
     }

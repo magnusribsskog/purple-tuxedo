@@ -58,6 +58,24 @@ tune it. Changes apply to the open thread at once.
   grammar or slang, and its points), your own additions, and the weight of
   each category.
 
+## The Brainrot Parade 🦆
+
+Press **Brainrot Parade** in the panel to see every judgement on the page at
+once. While it marches, nothing is hidden. Instead:
+
+- 🤡 comments Tux would hide get a stamp naming why: **TOO SHORT**, **SLOP**,
+  **COLLAPSED**;
+- ⭐ comments saved by a hero, 🍀 comments spared by their upvotes, and 😬
+  comments that only barely passed get stamps of their own;
+- clean comments dim to gray, so the verdicts stand alone in the light;
+- Mr. Duck, Court Marshal, presides from the corner, slamming his gavel at
+  every verdict. His eyebrow tells you what he thinks of it.
+
+It is the quickest way to tune the thresholds, and the most fun. All sound is
+synthesized in the browser, and starts after your first click on the page.
+The parade adjourns itself after ten minutes and leaves the page exactly as
+it found it.
+
 ## Grammar fixing, everywhere
 
 Off Reddit, a small pill on the page shows what was fixed and lets you switch

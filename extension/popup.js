@@ -66,6 +66,14 @@ function showStats(r) {
             : row('Lookup failures', 'none', 'ok'));
     box.hidden = false;
     document.getElementById('ver').textContent = 'v' + r.version;
+    if (r.parade) {
+        const btn = document.getElementById('parade');
+        document.getElementById('paradeBox').hidden = false;
+        btn.classList.toggle('on', r.parade.active);
+        btn.textContent = r.parade.active ? '🦆 Adjourn the parade' : '🦆 Brainrot Parade';
+        const m = Math.floor(r.parade.secondsLeft / 60), sec = String(r.parade.secondsLeft % 60).padStart(2, '0');
+        document.getElementById('paradeState').textContent = r.parade.active ? `court adjourns in ${m}:${sec}` : '';
+    }
 }
 
 let live = null;
@@ -115,6 +123,12 @@ document.getElementById('reset').addEventListener('click', async () => {
     render(defaults);
     slop = structuredClone(defaults.slopWeights || {});
     renderWords();
+});
+
+document.getElementById('parade').addEventListener('click', async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    try { await chrome.tabs.sendMessage(tab.id, { type: 'tux-parade' }); } catch {}
+    refresh();
 });
 
 init();
