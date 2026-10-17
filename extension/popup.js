@@ -50,7 +50,7 @@ function row(name, value, cls = '') {
 function showStats(r) {
     const s = r.stats, f = s.failures;
     const hidden = Object.values(s.hidden).reduce((a, b) => a + b, 0);
-    const fails = f.noBody + f.noScore + f.noThingId;
+    const fails = f.noBody + f.noScore + f.noThingId + (f.noText || 0) + (f.thrown || 0);
     const box = document.getElementById('stats');
     box.innerHTML =
         row('Top-level comments judged', s.judged) +
@@ -62,7 +62,9 @@ function showStats(r) {
         (fails
             ? row('Unreadable: no text', f.noBody, f.noBody ? 'fail' : '') +
               row('Unreadable: no score', f.noScore, f.noScore ? 'fail' : '') +
-              row('Unreadable: no id', f.noThingId, f.noThingId ? 'fail' : '')
+              row('Unreadable: no id', f.noThingId, f.noThingId ? 'fail' : '') +
+              row('No text after waiting', f.noText || 0, f.noText ? 'fail' : '') +
+              row('Errors (see console)', f.thrown || 0, f.thrown ? 'fail' : '')
             : row('Lookup failures', 'none', 'ok'));
     box.hidden = false;
     document.getElementById('ver').textContent = 'v' + r.version;

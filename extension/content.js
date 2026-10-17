@@ -26,6 +26,13 @@
  * Text correction is handled by grammar-fixer.js (GrammarFixer, PlaceholderProtector).
  * Slop scoring lives here.
  *
+ * v1.1.2 — replies get fixed too. Tux used to accept a whole thread from
+ *          Reddit, admire the top comment, and ignore everyone who answered
+ *          it. Comments are now fixed when they arrive, not once you are
+ *          already reading them, and text Reddit quietly puts back is fixed
+ *          again.
+ * v1.1.1 — the slop score judges only what the author wrote, not what they
+ *          quoted.
  * v1.1.0 — the Brainrot Parade: a diagnostic mode, toggled from the panel,
  *          that hides nothing and stamps every verdict instead.
  * v1.0.0 — first public release.
@@ -472,7 +479,7 @@
         return {
             judged: 0, hidden: { Short: 0, Slop: 0, Collapsed: 0 },
             tuxedos: 0, heroes: 0, sparedByUpvotes: 0, paragraphsFixed: 0,
-            failures: { noBody: 0, noScore: 0, noThingId: 0 },
+            failures: { noBody: 0, noScore: 0, noThingId: 0, noText: 0, thrown: 0 },
         };
     }
     let STATS = freshStats();
@@ -480,6 +487,68 @@
     // The author's words as first seen. A re-evaluation after a settings
     // change must judge these, not the text the fixer has since cleaned up.
     const rawTextOf = new WeakMap();
+
+    // =========================================================================
+    // REFIX: TEXT THAT CHANGES AFTER IT WAS FIXED
+    // =========================================================================
+    //
+    // A processed mark records an encounter, not completion. Reddit hydrates: a comment can be fixed and
+    // then have its server text put back, or its body replaced, after Tux has
+    // read it. The comment observer below only hears new shreddit-comments, so
+    // those rewrites went unfixed (intermittent: a reply
+    // left with "i dont" and "im"). This watches text inside comments already
+    // processed, light DOM and open shadow roots, and fixes them again at once:
+    // the observer already batches, and a frame callback would never run in a
+    // background tab. Our own writes come back in a later batch and are
+    // skipped; the fixer is idempotent, so a pass over fixed text writes nothing.
+    const Refix = {
+        produced: new WeakMap(),               // text node -> the value we wrote
+        known: new WeakSet(),                  // comments the fixer has met
+        roots: new WeakSet(),
+        observer: null,
+
+        watch(root) {
+            if (!root || this.roots.has(root)) return;
+            this.roots.add(root);
+            this.observer ||= new MutationObserver(m => this.heard(m));
+            this.observer.observe(root, { childList: true, subtree: true, characterData: true });
+        },
+
+        heard(mutations) {
+            const pending = new Set();
+            for (const m of mutations) {
+                if (m.type === 'characterData' && this.produced.get(m.target) === m.target.nodeValue) continue;
+                const node = m.target.nodeType === Node.ELEMENT_NODE ? m.target : m.target.parentElement;
+                if (!node) continue;
+                const root = node.getRootNode();
+                const comment = node.closest('shreddit-comment') ||
+                    (root instanceof ShadowRoot ? root.host.closest('shreddit-comment') : null);
+                if (!comment || !this.known.has(comment)) continue;
+                const body = commentBody(comment);       // the body, or what replaced it
+                if (body && (body.contains(node) || node.contains(body))) pending.add(comment);
+            }
+            for (const c of pending) guarded('refix', c, () => NukerEngine.applyFixesToTextNodes(c));
+        },
+    };
+
+    // One comment's failure must never cost its neighbours. Every per-comment
+    // step runs through here: an exception is counted and logged with the
+    // comment's id, and the loop goes on. Before this, a throw inside a
+    // mutation batch silently dropped every comment after it in that batch:
+    // never fixed, never judged. Errors are shown in the panel, not swallowed.
+    function guarded(step, comment, fn) {
+        try { return fn(); }
+        catch (e) {
+            STATS.failures.thrown++;
+            console.warn(`Purple Tuxedo: ${step} failed on ${comment?.getAttribute?.('thingid') || 'a comment'}`, e);
+        }
+    }
+
+    // A comment with no text yet is usually still hydrating. Wait a little for
+    // it before judging it "Collapsed"; one Reddit marks collapsed is judged at
+    // once, as before.
+    const TEXT_WAIT_MS = 250, TEXT_WAIT_TRIES = 8;
+    const textWaits = new WeakMap();
 
     // The Brainrot Parade (parade.js) is optional: without it, Tux runs as
     // ever. Its stamps name the verdict in a few loud words.
@@ -615,6 +684,18 @@
         // paragraph is read as one text and every change goes back into the
         // node it came from (GrammarFixer.fixSegments). Link and
         // code text is read for context, never written.
+        // Fixing is eager, judging is lazy. A comment is fixed the moment it is
+        // found, so it is usually right before it is seen; only the verdict
+        // waits for the IntersectionObserver. Fixing used to wait for it too,
+        // which made "fixed before it renders" a race against scrolling, and
+        // left any comment it never reported unfixed for good, such as the
+        // comments Reddit loads after the page has started.
+        fixComment(comment) {
+            Refix.known.add(comment);
+            Refix.watch(comment.shadowRoot);
+            this.applyFixesToTextNodes(comment);
+        },
+
         applyFixesToTextNodes(comment) {
             if (!CONFIG.ENABLE_GRAMMAR_FIXES) return;
             const body = commentBody(comment);
@@ -637,7 +718,10 @@
                 const { parts, corrections } = GrammarFixer.fixSegments(texts, frozen);
                 if (corrections.length) STATS.paragraphsFixed++;
                 parts.forEach((text, k) => {
-                    if (segments[k].node && text !== texts[k]) segments[k].node.nodeValue = text;
+                    if (segments[k].node && text !== texts[k]) {
+                        Refix.produced.set(segments[k].node, text);
+                        segments[k].node.nodeValue = text;
+                    }
                 });
             }
         },
@@ -646,10 +730,24 @@
             if (comment.hasAttribute('data-processed')) return;
 
             // Raw text first: the score judges what the author wrote, not
-            // what the fixer made of it.
-            if (!rawTextOf.has(comment)) rawTextOf.set(comment, extractCommentText(comment));
-            const rawText   = rawTextOf.get(comment);
+            // what the fixer made of it. An empty read is never cached: it is
+            // a comment still hydrating far more often than a final answer.
+            if (!rawTextOf.has(comment)) {
+                const txt = extractCommentText(comment);
+                if (txt.trim()) rawTextOf.set(comment, txt);
+            }
+            const rawText   = rawTextOf.get(comment) || '';
             const cleanText = rawText.replace(/\s+/g, ' ').trim();
+
+            if (!cleanText && !comment.hasAttribute('collapsed')) {
+                const tries = textWaits.get(comment) || 0;
+                if (tries < TEXT_WAIT_TRIES) {
+                    textWaits.set(comment, tries + 1);
+                    setTimeout(() => guarded('judge', comment, () => this.processComment(comment)), TEXT_WAIT_MS);
+                    return;
+                }
+                STATS.failures.noText++;
+            }
 
             // Grammar fixes run before the hide decision — intentionally.
             // Do not move this after isTooShort/isTooSloppy to "skip work" on
@@ -658,7 +756,9 @@
             // runs, so there is a visible window between render and hide where
             // the comment appears unfixed. The saving is negligible; the artifact
             // is not. Every comment is fixed, replies included.
-            this.applyFixesToTextNodes(comment);
+            // A comment is fixed when it is found (fixComment); this pass is
+            // the safety net, and finds nothing left to do.
+            this.fixComment(comment);
 
             const isTopLevel = !comment.parentElement?.closest('shreddit-comment');
             if (!isTopLevel) {
@@ -728,8 +828,8 @@
                 entries => {
                     entries.forEach(entry => {
                         if (entry.isIntersecting) {
-                            NukerEngine.processComment(entry.target);
                             this.intersectionObserver.unobserve(entry.target);
+                            guarded('judge', entry.target, () => NukerEngine.processComment(entry.target));
                         }
                     });
                 },
@@ -740,12 +840,14 @@
         start() {
             const target = document.querySelector('shreddit-app') || document.body;
             this.observer.observe(target, { childList: true, subtree: true });
+            Refix.watch(target);
 
+            document.querySelectorAll('shreddit-comment').forEach(el => guarded('fix', el, () => NukerEngine.fixComment(el)));
             document.querySelectorAll('shreddit-comment:not([data-processed])').forEach(el => {
                 this.intersectionObserver.observe(el);
             });
 
-            console.log(`Purple Tuxedo of Shame v1.1.0 active`);
+            console.log(`Purple Tuxedo of Shame v1.1.2 active`);
             console.log(` Nuke: <${CONFIG.MIN_LENGTH} chars | Save: ${CONFIG.CHILD_MIN_LENGTH} chars / ${CONFIG.CHILD_MIN_WORDS} words`);
             console.log(` Score threshold: ${CONFIG.SCORE_NUKE_THRESHOLD} | Upvote immunity: ${CONFIG.USE_UPVOTE_IMMUNITY ? `>=${CONFIG.UPVOTE_THRESHOLD}` : 'OFF'}`);
         }
@@ -755,12 +857,15 @@
                 for (const node of mut.addedNodes) {
                     if (node.nodeType !== Node.ELEMENT_NODE) continue;
 
-                    if (node.matches?.('shreddit-comment')) {
-                        this.intersectionObserver.observe(node);
-                    } else {
-                        node.querySelectorAll?.('shreddit-comment').forEach(
-                            el => this.intersectionObserver.observe(el)
-                        );
+                    // The node and everything inside it. "Load more" inserts a
+                    // whole thread as one node: a comment with its replies
+                    // already in it. Taking only the node left every reply
+                    // unseen, never fixed and never judged.
+                    const found = [...(node.matches?.('shreddit-comment') ? [node] : []),
+                                   ...(node.querySelectorAll?.('shreddit-comment') || [])];
+                    for (const el of found) {
+                        this.intersectionObserver.observe(el);   // first: a failed fix is still judged
+                        guarded('fix', el, () => NukerEngine.fixComment(el));   // now, not when it scrolls near
                     }
                 }
             }
@@ -828,7 +933,7 @@
                 return;
             }
             if (msg?.type !== 'tux-stats') return;
-            reply({ parade: typeof Parade !== 'undefined' ? Parade.state : null, version: '1.1.0', stats: STATS, config: Object.fromEntries(TUNABLE.map(k => [k, CONFIG[k]])),
+            reply({ parade: typeof Parade !== 'undefined' ? Parade.state : null, version: '1.1.2', stats: STATS, config: Object.fromEntries(TUNABLE.map(k => [k, CONFIG[k]])),
                     defaults: { ...DEFAULTS, slopWeights: DEFAULT_SLOP_WEIGHTS }, slopWeights: SLOP_WEIGHTS, comments: document.querySelectorAll('shreddit-comment').length });
         });
     }
