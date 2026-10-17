@@ -26,7 +26,8 @@ Each top-level comment is weighed on two things:
   threshold (15 by default), it is low-effort however long it is.
 
 The score always judges the comment **as its author wrote it**, before any
-grammar fixing.
+grammar fixing, and only **what its author wrote**: quoted text and code are
+left out, so quoting someone's sloppy words never counts against you.
 
 Then:
 

@@ -100,6 +100,35 @@
         return el?.innerText || el?.textContent || '';
     }
 
+    // What the author wrote, without what they quoted. The score judges the
+    // debater, so the opponent's words in a blockquote (and code, which isn't
+    // prose) don't count against them. The fixer already leaves those alone
+    // (FIX_SKIP_BLOCK). Each outermost quote's own innerText is cut from the
+    // element's innerText in document order, so line breaks survive. A comment
+    // that is nothing but a quote keeps its full text: there is nothing of the
+    // author's to judge, and an empty result would read as "Collapsed".
+    const NOT_THE_AUTHORS = 'blockquote, pre, code';
+    function authorText(el) {
+        const full = getElementText(el);
+        const quoted = [...(el?.querySelectorAll?.(NOT_THE_AUTHORS) || [])]
+            .filter(q => {                     // outermost only: a quote inside a quote is cut with it
+                const outer = q.parentElement?.closest(NOT_THE_AUTHORS);
+                return !outer || !el.contains(outer);
+            });
+        if (!quoted.length) return full;
+        let own = '', from = 0;
+        for (const q of quoted) {
+            const t = getElementText(q).trim();
+            if (!t) continue;
+            const at = full.indexOf(t, from);
+            if (at < 0) continue;              // not found in order: keep the text rather than guess
+            own += full.slice(from, at);
+            from = at + t.length;
+        }
+        own += full.slice(from);
+        return own.trim() ? own : full;
+    }
+
 
     // =========================================================================
     // COMMENT TEXT EXTRACTION
@@ -137,7 +166,7 @@
             ].filter(Boolean);
 
             for (const el of candidates) {
-                const txt = getElementText(el).trim();
+                const txt = authorText(el).trim();
                 if (txt.length > 0) return txt;
             }
         }
@@ -156,7 +185,7 @@
         for (const sel of lightSelectors) {
             const el = comment.querySelector(sel);
             if (el) {
-                const txt = getElementText(el).trim();
+                const txt = authorText(el).trim();
                 if (txt.length > 0) return txt;
             }
         }
