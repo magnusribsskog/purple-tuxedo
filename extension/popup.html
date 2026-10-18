@@ -31,6 +31,8 @@
   #add { margin: 0; padding: 2px 6px; }
   #parade { margin: 0 8px 0 0; font-weight: 600; color: var(--fg); border-color: var(--purple); }
   #parade.on { background: var(--purple); color: #fff; }
+  #fixParade { margin: 4px 0; font-weight: 600; color: var(--fg); border-color: var(--purple); }
+  #fixParade.on { background: var(--purple); color: #fff; }
 </style>
 </head>
 <body>
@@ -38,7 +40,7 @@
 
 <section>
   <h2>This page</h2>
-  <div id="offpage" hidden>No Reddit thread here. Grammar fixing still runs on this site: its own small pill on the page shows what it changed and can switch it off here.</div>
+  <div id="offpage" hidden>No Reddit thread here.</div>
   <div id="stats" class="grid" hidden></div>
 </section>
 
@@ -87,6 +89,14 @@
   <label class="check">Mark hidden comments <input type="checkbox" data-key="SHOW_PLACEHOLDERS"></label>
   <button id="reset">Reset to defaults</button>
   <p class="note">Changes apply to the open thread at once.</p>
+</section>
+
+<section>
+  <h2>Other sites (experimental)</h2>
+  <label class="check">Fix grammar on other sites <input type="checkbox" id="otherSites"></label>
+  <button id="fixParade" hidden>🦆 Parade the fixes</button>
+  <p class="note" id="fixParadeNote" hidden>Stamps every paragraph fixed on this page; hover a stamp for each rule, before → after. Leaves by itself after ten minutes.</p>
+  <p class="note">Off by default. Some sites rebuild their pages in ways the fixer doesn't handle yet. Takes effect when a page next loads; a small pill on each page then shows what was changed and can switch it off for that site.</p>
 </section>
 
 <script src="popup.js"></script>

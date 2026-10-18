@@ -26,6 +26,13 @@
  * Text correction is handled by grammar-fixer.js (GrammarFixer, PlaceholderProtector).
  * Slop scoring lives here.
  *
+ * v1.2.0 — fixing grammar on other sites is now experimental and off by
+ *          default. Away from Reddit it did odd things on sites that rebuild
+ *          their pages their own way, and an extension that quietly edits
+ *          every page you visit should be invited in. Until switched on in
+ *          the panel, it does nothing off Reddit. Reddit is unchanged.
+ *          With it on, "Parade the fixes" in the panel stamps every
+ *          paragraph it changed; hover a stamp for each rule, before → after.
  * v1.1.2 — replies get fixed too. Tux used to accept a whole thread from
  *          Reddit, admire the top comment, and ignore everyone who answered
  *          it. Comments are now fixed when they arrive, not once you are
@@ -847,7 +854,7 @@
                 this.intersectionObserver.observe(el);
             });
 
-            console.log(`Purple Tuxedo of Shame v1.1.2 active`);
+            console.log(`Purple Tuxedo of Shame v1.2.0 active`);
             console.log(` Nuke: <${CONFIG.MIN_LENGTH} chars | Save: ${CONFIG.CHILD_MIN_LENGTH} chars / ${CONFIG.CHILD_MIN_WORDS} words`);
             console.log(` Score threshold: ${CONFIG.SCORE_NUKE_THRESHOLD} | Upvote immunity: ${CONFIG.USE_UPVOTE_IMMUNITY ? `>=${CONFIG.UPVOTE_THRESHOLD}` : 'OFF'}`);
         }
@@ -933,7 +940,7 @@
                 return;
             }
             if (msg?.type !== 'tux-stats') return;
-            reply({ parade: typeof Parade !== 'undefined' ? Parade.state : null, version: '1.1.2', stats: STATS, config: Object.fromEntries(TUNABLE.map(k => [k, CONFIG[k]])),
+            reply({ parade: typeof Parade !== 'undefined' ? Parade.state : null, version: '1.2.0', stats: STATS, config: Object.fromEntries(TUNABLE.map(k => [k, CONFIG[k]])),
                     defaults: { ...DEFAULTS, slopWeights: DEFAULT_SLOP_WEIGHTS }, slopWeights: SLOP_WEIGHTS, comments: document.querySelectorAll('shreddit-comment').length });
         });
     }

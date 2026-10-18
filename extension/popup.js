@@ -134,3 +134,30 @@ document.getElementById('parade').addEventListener('click', async () => {
 });
 
 init();
+
+// Grammar fixing on other sites: experimental and off by default. Its own
+// setting, outside tuxSettings, so it works off Reddit and survives "Reset".
+const otherSites = document.getElementById('otherSites');
+chrome.storage.local.get('fixOtherSites').then(({ fixOtherSites }) => {
+    otherSites.checked = fixOtherSites === true;
+});
+otherSites.addEventListener('change', () => chrome.storage.local.set({ fixOtherSites: otherSites.checked }));
+
+// The parade off Reddit: only answered where the fixer is switched on and
+// running (everywhere/content.js). On Reddit, and where it is off, no answer.
+const fixParade = document.getElementById('fixParade');
+async function askFixer(type) {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    try { return await chrome.tabs.sendMessage(tab.id, { type }); } catch { return null; }
+}
+function showFixer(r) {
+    if (!r) return;
+    fixParade.hidden = false;
+    document.getElementById('fixParadeNote').hidden = false;
+    fixParade.classList.toggle('on', r.parade.active);
+    fixParade.textContent = r.parade.active ? '🦆 Adjourn the parade' : '🦆 Parade the fixes';
+    document.getElementById('offpage').textContent =
+        `No Reddit thread here. Grammar fixes on ${r.host} so far: ${r.fixes}.`;
+}
+askFixer('gf-state').then(showFixer);
+fixParade.addEventListener('click', async () => showFixer(await askFixer('gf-parade')));

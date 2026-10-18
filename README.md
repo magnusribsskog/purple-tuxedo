@@ -1,16 +1,17 @@
 # Purple Tuxedo of Shame
 
 A Chrome extension that makes Reddit threads worth reading, and quietly fixes
-the grammar on everything else.
+the grammar in them.
 
 On Reddit, it hides low-effort comments, unless someone replied with
 something worth reading. Then the lazy comment stays, wearing a tuxedo of
 shame 🤵‍♂️, and the reply that saved the thread gets a gold star ⭐.
 
-Everywhere on the web, it repairs the small mistakes that make text hard to
-read: missing apostrophes (`dont` → `don't`), a lowercase `i`, sentences that
-start in lowercase. It never touches slang, links, code or anything you are
-typing.
+It also repairs the small mistakes that make text hard to read: missing
+apostrophes (`dont` → `don't`), a lowercase `i`, sentences that start in
+lowercase. It never touches slang, links, code or anything you are typing.
+On Reddit this is on by default. On other sites it is experimental and off
+until you switch it on.
 
 Everything happens locally in your browser. Nothing is sent anywhere.
 
@@ -77,10 +78,24 @@ synthesized in the browser, and starts after your first click on the page.
 The parade adjourns itself after ten minutes and leaves the page exactly as
 it found it.
 
-## Grammar fixing, everywhere
+## Grammar fixing, and other sites (experimental)
 
-Off Reddit, a small pill on the page shows what was fixed and lets you switch
-fixing off for that site. The fixer is deliberately conservative:
+On Reddit, grammar fixing is on by default and can be switched off in the
+panel.
+
+On other sites it is **experimental and off by default**. Many sites rebuild
+their pages in ways the fixer does not handle well yet, and it can do odd
+things there. If you want to try it, open the panel and tick **Fix grammar on
+other sites**; it takes effect when a page next loads. A small pill on each
+page then shows what was fixed and lets you switch fixing off for that site.
+While the setting is off, the fixer does nothing at all away from Reddit.
+
+To see what it did, open the panel on that page and press **Parade the
+fixes**: every paragraph the fixer changed gets a stamp, and hovering a stamp
+lists each rule with its before and after. It is the quickest way to find an
+odd fix, and the parade leaves by itself after ten minutes.
+
+Wherever it runs, the fixer is deliberately conservative:
 
 - Fixes are made per paragraph, so a word after a link is not mistaken for
   the start of a sentence.
@@ -101,8 +116,9 @@ Not yet in the Chrome Web Store.
 2. Open `chrome://extensions` and turn on **Developer mode**.
 3. Click **Load unpacked** and choose the `extension` folder.
 
-Chrome will ask for access to all sites: the grammar fixer needs it to read
-and repair text on the pages you visit. If you also run a separate grammar
+Chrome will ask for access to all sites. That is for the experimental
+grammar fixer on other sites: it needs it to read and repair text on those
+pages, though it stays idle until you switch it on. If you also run a separate grammar
 fixing extension, disable one of them.
 
 ## Privacy

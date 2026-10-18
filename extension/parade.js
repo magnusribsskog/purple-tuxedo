@@ -27,6 +27,11 @@
  *
  * Loaded before content.js; content.js calls in, the parade never reaches
  * into content.js except through the onChange hook it is given.
+ *
+ * Off Reddit (2026-10-18) the same parade runs for the experimental grammar
+ * fixer (everywhere/content.js): every paragraph it changed wears a FIXED
+ * stamp, and hovering the stamp lists each rule with its before and after.
+ * A debugging aid for hardening the fixer, never on by default.
  */
 
 const Parade = (() => {
@@ -272,13 +277,18 @@ const Parade = (() => {
             stamp: "background: rgba(87,101,116,0.94); color: #fff; border: 2px solid #fff; font-size: 13px; padding: 3px 10px;",
             tilt: -4, mood: "resigned",
         },
+        fix: {          // off Reddit: the grammar fixer changed this paragraph
+            outline: "3px solid #2e9e6a", glow: "0 0 16px 3px rgba(46,158,106,0.4)",
+            stamp: "background: rgba(30,120,80,0.94); color: #fff; border: 2px dashed #fff; font-size: 13px; padding: 3px 10px;",
+            tilt: -3, mood: "skeptical",
+        },
     };
     const STYLED = ["outline", "outline-offset", "box-shadow", "position", "filter", "transition"];
 
     const marked = new Map();   // comment → { stampEl, tier, text }
     const dimmed = new Set();
 
-    function mark(el, tier, text) {
+    function mark(el, tier, text, detail) {
         if (!active) return false;
         const prev = marked.get(el);
         if (prev) {
@@ -296,6 +306,8 @@ const Parade = (() => {
 
             const stampEl = document.createElement("div");
             stampEl.className = "tux-parade-stamp";
+            // The grammar fixer must never fix our own stamps.
+            stampEl.setAttribute("data-grammar-fixer-ui", "");
             stampEl.textContent = text;
             stampEl.style.cssText = `
                 position: absolute; top: 4px; right: 12px; z-index: 5;
@@ -305,6 +317,11 @@ const Parade = (() => {
                 transform: rotate(${style.tilt}deg);
                 ${style.stamp}
             `;
+            if (detail) {   // hover a FIXED stamp for each rule, before → after
+                stampEl.title = detail;
+                stampEl.style.pointerEvents = "auto";
+                stampEl.style.cursor = "help";
+            }
             el.appendChild(stampEl);
             stampEl.animate([
                 { transform: `rotate(${style.tilt}deg) scale(2.4)`, opacity: 0 },
@@ -376,6 +393,7 @@ const Parade = (() => {
         saved:  (el)       => mark(el, "saved",  "⭐ SAVED BY A HERO"),
         near:   (el, text) => mark(el, "near",   `😬 BARELY SURVIVED — ${text}`),
         spared: (el, text) => mark(el, "spared", `🍀 SPARED BY UPVOTES — ${text}`),
+        fixed:  (el, text, detail) => mark(el, "fix", `✏️ ${text}`, detail),
         dim,
         clear,
     };

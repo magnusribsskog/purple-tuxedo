@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Purple Tuxedo of Shame",
-  "version": "1.1.2",
-  "description": "Hides low-effort Reddit comments and highlights substantive replies. Quietly fixes common grammar mistakes on every site.",
+  "version": "1.2.0",
+  "description": "Hides low-effort Reddit comments and highlights good replies. Fixes common grammar slips on Reddit; other sites are experimental.",
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
@@ -47,6 +47,7 @@
       ],
       "js": [
         "grammar-fixer.js",
+        "parade.js",
         "everywhere/content.js"
       ],
       "run_at": "document_idle"

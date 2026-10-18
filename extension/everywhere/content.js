@@ -312,6 +312,7 @@
         state.lastBlock.set(block, after);
         state.metrics.changedNodes += changed;
         recordDiagnostic(joined, after, result.corrections);
+        noteFix(block, result.corrections);
         recordCorrection();
     }
 
@@ -360,8 +361,38 @@
 
         state.metrics.changedNodes++;
         recordDiagnostic(current, fixed, diagnostic.corrections);
+        noteFix(node.parentElement, diagnostic.corrections);
 
         recordCorrection();
+    }
+
+    // The parade, off Reddit (2026-10-18): every paragraph the fixer
+    // changed wears a stamp on the page, so an odd fix is seen where it
+    // happened instead of dug out of the diagnostic report. Remembered while
+    // the parade is off, so switching it on shows what was already done.
+    const fixedBlocks = new Map();   // element → its corrections, oldest first
+    const MAX_FIXED_BLOCKS = 500;
+
+    function noteFix(el, corrections) {
+        if (!el || el.nodeType !== Node.ELEMENT_NODE || !corrections?.length) return;
+        const list = (fixedBlocks.get(el) || []).concat(corrections).slice(-20);
+        fixedBlocks.delete(el);   // re-insert: Map order is least recently fixed first
+        fixedBlocks.set(el, list);
+        if (fixedBlocks.size > MAX_FIXED_BLOCKS) fixedBlocks.delete(fixedBlocks.keys().next().value);
+        if (typeof Parade !== 'undefined' && Parade.active) paradeMark(el, list);
+    }
+
+    function paradeMark(el, list) {
+        if (!el.isConnected) return;
+        const rules = [...new Set(list.map(c => c.ruleId))];
+        const shown = rules.slice(0, 3).join(', ') + (rules.length > 3 ? ', …' : '');
+        const detail = list.map(c => `${c.ruleId}: ${c.original} → ${c.replacement}`).join('\n');
+        Parade.fixed(el, `${list.length} FIXED · ${shown}`, detail);
+    }
+
+    function paradeAll() {
+        if (typeof Parade === 'undefined' || !Parade.active) return;
+        for (const [el, list] of fixedBlocks) paradeMark(el, list);
     }
 
     function clipDiagnosticText(text) {
@@ -1025,12 +1056,31 @@
     // shadow-hook.js (page world) announces each open root as it is
     // attached. Observation, like everything else here, continues while
     // paused.
+    let switchedOn = false;
     document.addEventListener('grammar-fixer-v01:shadow-root', event => {
+        if (!switchedOn) return;
         const host = event.composedPath()[0];
         if (host && host.shadowRoot) observeRoot(host.shadowRoot);
     }, true);
 
     async function start() {
+        // Experimental, and off by default (2026-10-18): on some
+        // sites the fixer still does odd things. Until it is switched on in
+        // the panel it does nothing here at all: no fixing, no observers, no
+        // pill. Switching it on takes effect at the next page load.
+        const { fixOtherSites } = await chrome.storage.local.get('fixOtherSites');
+        if (fixOtherSites !== true) return;
+        switchedOn = true;
+
+        if (typeof Parade !== 'undefined') {
+            Parade.setHooks({ onChange: paradeAll });
+            chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+                if (msg?.type !== 'gf-state' && msg?.type !== 'gf-parade') return;
+                if (msg.type === 'gf-parade') Parade.toggle();
+                reply({ parade: Parade.state, fixes: state.totalCorrections, host: location.hostname });
+            });
+        }
+
         await loadSitePreference();
 
         /*
