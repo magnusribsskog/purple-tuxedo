@@ -269,13 +269,23 @@
         }
     }
 
+    // A label is short. A whole card that happens to be clickable is not:
+    // review sites wrap each review in role="button", and the label rule
+    // skipped the reviews themselves. So the nearest label-ish ancestor only
+    // counts while its own text is label-sized.
+    const MAX_LABEL_CHARS = 120;
+    function insideLabel(block) {
+        const label = block.closest(LABEL_SELECTOR);
+        return !!label && (label.textContent || '').trim().length <= MAX_LABEL_CHARS;
+    }
+
     function processBlock(block) {
         if (!block || !block.isConnected) return;
         // A block that is itself a link, code, input or editable region is
         // outside the correction surface as a whole.
         if (block.nodeType === Node.ELEMENT_NODE &&
             (block.closest(SKIP_SELECTOR) || block.closest('[hidden]') ||
-             block.closest(LABEL_SELECTOR))) return;
+             insideLabel(block))) return;
 
         const segments = collectSegments(block);
         const texts = segments.map(seg => seg.text);

@@ -222,6 +222,11 @@ const GrammarFixer = {
             // These are valid words in English or another supported page
             // context. Do not alter a bare fragment merely for casing.
             if (offset === 0 && /^\s*(?:cant|im|wont)\b/i.test(full)) return match;
+            // A label, not a sentence: three words or fewer and no sentence
+            // punctuation. Names, tags and buttons keep their first word as
+            // written (a reviewer's "joanne alderton" was half-capitalised).
+            // Cost: "lol same" stays lowercase, and a miss is the cheaper error.
+            if (offset === 0 && !/[.!?]/.test(full) && full.trim().split(/\s+/).length <= 3) return match;
             // A handle or an identifier, not a word: its case is its spelling
             // (gueris24, gueris_tv, xX_gamer_Xx, v2, iPhone).
             const token = p2 + (full.slice(offset + match.length).match(/^\S*/)?.[0] || '');
