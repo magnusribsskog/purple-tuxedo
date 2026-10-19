@@ -227,8 +227,14 @@ const GrammarFixer = {
             const token = p2 + (full.slice(offset + match.length).match(/^\S*/)?.[0] || '');
             if (/[\d_]/.test(token) || /[A-Z]/.test(token.slice(1))) return match;
             const before = full.substring(0, offset);
-            const prev = before.split(/\s+/).pop()?.replace(/[.,!?;:"'()[\]]+$/, '').toLowerCase() || '';
+            const rawPrev = before.split(/\s+/).pop() || '';
+            const prev = rawPrev.replace(/[.,!?;:"'()[\]]+$/, '').toLowerCase();
             if (this.abbreviations.has(prev)) return match;
+            // An initialism's last stop is not a sentence end: U.S., D.C.,
+            // a.m., Ph.D. Had the writer ended a sentence there, the next word
+            // would already be capitalised and nothing changes.
+            // (The match begins at the stop itself, so put it back first.)
+            if (/^\(?(?:[A-Za-z]{1,2}\.){2,}$/.test(rawPrev + p1.trim())) return match;
             return p1 + p2.toUpperCase();
         });
 
