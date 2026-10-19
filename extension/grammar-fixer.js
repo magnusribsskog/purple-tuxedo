@@ -222,6 +222,10 @@ const GrammarFixer = {
             // These are valid words in English or another supported page
             // context. Do not alter a bare fragment merely for casing.
             if (offset === 0 && /^\s*(?:cant|im|wont)\b/i.test(full)) return match;
+            // A handle or an identifier, not a word: its case is its spelling
+            // (gueris24, gueris_tv, xX_gamer_Xx, v2, iPhone).
+            const token = p2 + (full.slice(offset + match.length).match(/^\S*/)?.[0] || '');
+            if (/[\d_]/.test(token) || /[A-Z]/.test(token.slice(1))) return match;
             const before = full.substring(0, offset);
             const prev = before.split(/\s+/).pop()?.replace(/[.,!?;:"'()[\]]+$/, '').toLowerCase() || '';
             if (this.abbreviations.has(prev)) return match;

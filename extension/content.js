@@ -26,6 +26,9 @@
  * Text correction is handled by grammar-fixer.js (GrammarFixer, PlaceholderProtector).
  * Slop scoring lives here.
  *
+ * v1.2.1 — handles and identifiers keep their case at a sentence start:
+ *          "gueris24" no longer becomes "Gueris24", nor do gueris_tv, v2 or
+ *          iPhone change.
  * v1.2.0 — fixing grammar on other sites is now experimental and off by
  *          default. Away from Reddit it did odd things on sites that rebuild
  *          their pages their own way, and an extension that quietly edits
@@ -854,7 +857,7 @@
                 this.intersectionObserver.observe(el);
             });
 
-            console.log(`Purple Tuxedo of Shame v1.2.0 active`);
+            console.log(`Purple Tuxedo of Shame v1.2.1 active`);
             console.log(` Nuke: <${CONFIG.MIN_LENGTH} chars | Save: ${CONFIG.CHILD_MIN_LENGTH} chars / ${CONFIG.CHILD_MIN_WORDS} words`);
             console.log(` Score threshold: ${CONFIG.SCORE_NUKE_THRESHOLD} | Upvote immunity: ${CONFIG.USE_UPVOTE_IMMUNITY ? `>=${CONFIG.UPVOTE_THRESHOLD}` : 'OFF'}`);
         }
@@ -940,7 +943,7 @@
                 return;
             }
             if (msg?.type !== 'tux-stats') return;
-            reply({ parade: typeof Parade !== 'undefined' ? Parade.state : null, version: '1.2.0', stats: STATS, config: Object.fromEntries(TUNABLE.map(k => [k, CONFIG[k]])),
+            reply({ parade: typeof Parade !== 'undefined' ? Parade.state : null, version: '1.2.1', stats: STATS, config: Object.fromEntries(TUNABLE.map(k => [k, CONFIG[k]])),
                     defaults: { ...DEFAULTS, slopWeights: DEFAULT_SLOP_WEIGHTS }, slopWeights: SLOP_WEIGHTS, comments: document.querySelectorAll('shreddit-comment').length });
         });
     }

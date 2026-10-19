@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Purple Tuxedo of Shame",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Hides low-effort Reddit comments and highlights good replies. Fixes common grammar slips on Reddit; other sites are experimental.",
   "icons": {
     "16": "icons/icon16.png",
