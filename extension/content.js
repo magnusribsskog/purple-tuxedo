@@ -26,6 +26,13 @@
  * Text correction is handled by grammar-fixer.js (GrammarFixer, PlaceholderProtector).
  * Slop scoring lives here.
  *
+ * v1.3.0 — bug reports from the parade. Off Reddit, with the fixer on, click
+ *          a stamp for a card (before, after, each rule, where it sits),
+ *          judge it and describe it in your own words; alt-click a paragraph
+ *          for a fix it missed. Findings collect across pages, and the panel
+ *          saves them as one .org report in Downloads/tux-bugs, ready to
+ *          attach to an issue or hand to an AI assistant. Stamps now float
+ *          above the page, so no site's layers can cover or erase them.
  * v1.2.3 — Steam-style review cards (whole card clickable) get fixed, and a
  *          short label such as a reviewer's name keeps its first word.
  * v1.2.2 — an initialism no longer ends a sentence: "the U.S. would" and
@@ -861,7 +868,7 @@
                 this.intersectionObserver.observe(el);
             });
 
-            console.log(`Purple Tuxedo of Shame v1.2.3 active`);
+            console.log(`Purple Tuxedo of Shame v1.3.0 active`);
             console.log(` Nuke: <${CONFIG.MIN_LENGTH} chars | Save: ${CONFIG.CHILD_MIN_LENGTH} chars / ${CONFIG.CHILD_MIN_WORDS} words`);
             console.log(` Score threshold: ${CONFIG.SCORE_NUKE_THRESHOLD} | Upvote immunity: ${CONFIG.USE_UPVOTE_IMMUNITY ? `>=${CONFIG.UPVOTE_THRESHOLD}` : 'OFF'}`);
         }
@@ -947,7 +954,7 @@
                 return;
             }
             if (msg?.type !== 'tux-stats') return;
-            reply({ parade: typeof Parade !== 'undefined' ? Parade.state : null, version: '1.2.3', stats: STATS, config: Object.fromEntries(TUNABLE.map(k => [k, CONFIG[k]])),
+            reply({ parade: typeof Parade !== 'undefined' ? Parade.state : null, version: '1.3.0', stats: STATS, config: Object.fromEntries(TUNABLE.map(k => [k, CONFIG[k]])),
                     defaults: { ...DEFAULTS, slopWeights: DEFAULT_SLOP_WEIGHTS }, slopWeights: SLOP_WEIGHTS, comments: document.querySelectorAll('shreddit-comment').length });
         });
     }

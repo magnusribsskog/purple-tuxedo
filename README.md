@@ -91,9 +91,29 @@ page then shows what was fixed and lets you switch fixing off for that site.
 While the setting is off, the fixer does nothing at all away from Reddit.
 
 To see what it did, open the panel on that page and press **Parade the
-fixes**: every paragraph the fixer changed gets a stamp, and hovering a stamp
-lists each rule with its before and after. It is the quickest way to find an
-odd fix, and the parade leaves by itself after ten minutes.
+fixes**: every paragraph the fixer changed gets a stamp. A stamp turns
+see-through when you hover over it, so you can read the text underneath. The
+parade leaves by itself after ten minutes.
+
+## Reporting a bad fix
+
+The parade is also the quickest way to report a problem, and one report can
+carry many of them:
+
+1. **Click a stamp** to open a card with everything about that paragraph:
+   before and after, each correction with its rule, and where it sits on the
+   page. Pick a verdict (*wrong fix*, *should have fixed*, *right but ugly*,
+   *just curious*) and describe what you see in your own words.
+2. **Alt-click any paragraph** to report a fix the fixer *missed*.
+3. **Add to report**. Findings collect across pages until you send them.
+4. In the panel, press **📮 Ship report**. One `.org` file is saved in a
+   `tux-bugs` folder inside your Downloads (you can rename the folder there).
+
+Attach that file to an [issue](https://github.com/magnusribsskog/purple-tuxedo/issues),
+or hand it to your AI assistant along with this repository: it is written so
+that whoever reads it needs no follow-up questions. A report contains only
+the paragraphs you chose and the addresses of their pages. Read it through
+before sharing.
 
 Wherever it runs, the fixer is deliberately conservative:
 
@@ -118,14 +138,17 @@ Not yet in the Chrome Web Store.
 
 Chrome will ask for access to all sites. That is for the experimental
 grammar fixer on other sites: it needs it to read and repair text on those
-pages, though it stays idle until you switch it on. If you also run a separate grammar
+pages, though it stays idle until you switch it on. It will also ask to
+manage your downloads: that is only so a bug report can be saved into its own
+folder instead of loose in Downloads. If you also run a separate grammar
 fixing extension, disable one of them.
 
 ## Privacy
 
 Purple Tuxedo has no server, no analytics and no network access of its own.
 It reads the page you are on, changes what you see, and stores only your
-settings and per-site on/off choices in your browser.
+settings, per-site on/off choices and any unsent bug-report findings in your
+browser. A bug report leaves your computer only if you send it yourself.
 
 ## Licence
 

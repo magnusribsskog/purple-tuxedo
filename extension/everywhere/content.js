@@ -322,7 +322,7 @@
         state.lastBlock.set(block, after);
         state.metrics.changedNodes += changed;
         recordDiagnostic(joined, after, result.corrections);
-        noteFix(block, result.corrections);
+        noteFix(block, result.corrections, joined, after);
         recordCorrection();
     }
 
@@ -371,7 +371,7 @@
 
         state.metrics.changedNodes++;
         recordDiagnostic(current, fixed, diagnostic.corrections);
-        noteFix(node.parentElement, diagnostic.corrections);
+        noteFix(node.parentElement, diagnostic.corrections, current, fixed);
 
         recordCorrection();
     }
@@ -380,29 +380,58 @@
     // changed wears a stamp on the page, so an odd fix is seen where it
     // happened instead of dug out of the diagnostic report. Remembered while
     // the parade is off, so switching it on shows what was already done.
-    const fixedBlocks = new Map();   // element → its corrections, oldest first
+    // element → { list: its corrections, oldest first; before: the text as the
+    // page first wrote it; after: the text as we last left it }
+    const fixedBlocks = new Map();
     const MAX_FIXED_BLOCKS = 500;
 
-    function noteFix(el, corrections) {
+    function noteFix(el, corrections, before, after) {
         if (!el || el.nodeType !== Node.ELEMENT_NODE || !corrections?.length) return;
-        const list = (fixedBlocks.get(el) || []).concat(corrections).slice(-20);
+        const prev = fixedBlocks.get(el);
+        const rec = {
+            list: (prev ? prev.list : []).concat(corrections).slice(-20),
+            before: prev ? prev.before : before,
+            after,
+        };
         fixedBlocks.delete(el);   // re-insert: Map order is least recently fixed first
-        fixedBlocks.set(el, list);
+        fixedBlocks.set(el, rec);
         if (fixedBlocks.size > MAX_FIXED_BLOCKS) fixedBlocks.delete(fixedBlocks.keys().next().value);
-        if (typeof Parade !== 'undefined' && Parade.active) paradeMark(el, list);
+        if (typeof Parade !== 'undefined' && Parade.active) paradeMark(el, rec.list);
+    }
+
+    function openFinding(el, e) {
+        const rec = fixedBlocks.get(el);
+        if (!rec || typeof Report === 'undefined') return;
+        Report.open(el, { kind: 'fixed', before: rec.before, after: rec.after, corrections: rec.list },
+                    e?.clientX, e?.clientY);
+    }
+
+    // A fix the fixer never made has no stamp to click: alt-click the
+    // paragraph instead, while the parade runs.
+    function onAltClick(e) {
+        if (!e.altKey || typeof Parade === 'undefined' || !Parade.active || typeof Report === 'undefined') return;
+        const target = e.composedPath()[0];
+        if (!target || target.nodeType !== Node.ELEMENT_NODE || target.closest('[data-grammar-fixer-ui]')) return;
+        const block = isInline(target) ? blockOf(target.firstChild || target) : target;
+        if (!block || block.nodeType !== Node.ELEMENT_NODE) return;
+        e.preventDefault();
+        e.stopPropagation();
+        if (fixedBlocks.has(block)) return openFinding(block, e);
+        const text = collectSegments(block).map(seg => seg.text).join('').trim();
+        if (!text) return;
+        Report.open(block, { kind: 'missed', before: text, after: text, corrections: [] }, e.clientX, e.clientY);
     }
 
     function paradeMark(el, list) {
         if (!el.isConnected) return;
         const rules = [...new Set(list.map(c => c.ruleId))];
         const shown = rules.slice(0, 3).join(', ') + (rules.length > 3 ? ', …' : '');
-        const detail = list.map(c => `${c.ruleId}: ${c.original} → ${c.replacement}`).join('\n');
-        Parade.fixed(el, `${list.length} FIXED · ${shown}`, detail);
+        Parade.fixed(el, `${list.length} FIXED · ${shown}`);
     }
 
     function paradeAll() {
         if (typeof Parade === 'undefined' || !Parade.active) return;
-        for (const [el, list] of fixedBlocks) paradeMark(el, list);
+        for (const [el, rec] of fixedBlocks) paradeMark(el, rec.list);
     }
 
     function clipDiagnosticText(text) {
@@ -1083,7 +1112,8 @@
         switchedOn = true;
 
         if (typeof Parade !== 'undefined') {
-            Parade.setHooks({ onChange: paradeAll });
+            Parade.setHooks({ onChange: paradeAll, onStamp: openFinding });
+            document.addEventListener('click', onAltClick, true);
             chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
                 if (msg?.type !== 'gf-state' && msg?.type !== 'gf-parade') return;
                 if (msg.type === 'gf-parade') Parade.toggle();

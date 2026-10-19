@@ -30,7 +30,9 @@
  *
  * Off Reddit (2026-10-18) the same parade runs for the experimental grammar
  * fixer (everywhere/content.js): every paragraph it changed wears a FIXED
- * stamp, and hovering the stamp lists each rule with its before and after.
+ * stamp, floating in our own overlay layer above the page (see THE OVERLAY);
+ * it turns see-through under the mouse, and a click opens a finding card
+ * (everywhere/report.js).
  * A debugging aid for hardening the fixer, never on by default.
  */
 
@@ -44,6 +46,7 @@ const Parade = (() => {
     let activatedAt = 0;
     let safetyTimer = null, chaosTimer = null;
     let onChange = () => {};
+    let onStamp = null;   // off Reddit: a click on a FIXED stamp opens its finding card
     let audioCtx = null;
 
     // ======================== AUDIO (all synthesized) ========================
@@ -189,7 +192,12 @@ const Parade = (() => {
             root.style.cssText = `position: fixed; right: 18px; bottom: 18px; width: 150px; height: 120px;
                                   z-index: 2147483645; pointer-events: none;
                                   filter: drop-shadow(0 6px 14px rgba(0,0,0,0.45));`;
-            root.innerHTML = `
+            root.setAttribute("data-grammar-fixer-ui", "");
+            // A closed shadow root: page CSS cannot reach the judge. Facebook's
+            // pinned the gavel's SVG transform (2026-10-19): the bonk sounded,
+            // the gavel never moved.
+            const shadow = root.attachShadow({ mode: "closed" });
+            shadow.innerHTML = `
               <svg xmlns="${NS}" viewBox="250 40 320 230" width="150" height="120" aria-hidden="true">
                 <rect x="250" y="150" width="300" height="110" rx="6" fill="#6b4423"/>
                 <rect x="240" y="140" width="320" height="18" rx="4" fill="#8a5a2e"/>
@@ -208,9 +216,9 @@ const Parade = (() => {
                 </g>
               </svg>`;
             document.documentElement.appendChild(root);
-            const gavel = root.querySelector(".gavel");
+            const gavel = shadow.querySelector(".gavel");
             gavel.setAttribute("transform", "translate(520,120) rotate(-30)");
-            judge = { root, gavel, brow: root.querySelector(".brow") };
+            judge = { root, gavel, brow: shadow.querySelector(".brow") };
             root.animate([{ transform: "translateY(160px)" }, { transform: "translateY(-8px)", offset: 0.7 },
                           { transform: "translateY(0)" }], { duration: 700, easing: "ease-out" });
         } catch (e) { judge = null; }
@@ -288,8 +296,113 @@ const Parade = (() => {
     const marked = new Map();   // comment → { stampEl, tier, text }
     const dimmed = new Set();
 
-    function mark(el, tier, text, detail) {
+
+    // ======================== THE OVERLAY (FIXED stamps, off Reddit) ========================
+    // Stamps placed INSIDE a page's elements belong to its stacking order and
+    // its framework. On Facebook (2026-10-19) a stamp over a video sat under
+    // the player's click layer, so clicks went to the video; and React's
+    // re-renders wiped stamps it did not own. So FIXED stamps and their
+    // outlines live in our own layer at the top of the document, in a closed
+    // shadow root no page CSS can reach, positioned over each paragraph from
+    // its on-screen rectangle. The page's own elements are never touched.
+    let layer = null;        // { host, root }
+    const floating = new Map();   // paragraph → { box, stampEl, text }
+    let placeQueued = false, placeTimer = null;
+
+    function ensureLayer() {
+        if (layer && layer.host.isConnected) return layer;
+        const host = document.createElement("div");
+        host.setAttribute("data-grammar-fixer-ui", "");
+        host.style.cssText = "all: initial; position: fixed; inset: 0; z-index: 2147483644; pointer-events: none;";
+        const root = host.attachShadow({ mode: "closed" });
+        document.documentElement.appendChild(host);
+        layer = { host, root };
+        addEventListener("scroll", queuePlace, true);
+        addEventListener("resize", queuePlace);
+        placeTimer = setInterval(placeAll, 500);   // layout shifts and removals scroll nothing
+        return layer;
+    }
+
+    function dropLayer() {
+        removeEventListener("scroll", queuePlace, true);
+        removeEventListener("resize", queuePlace);
+        clearInterval(placeTimer);
+        placeTimer = null;
+        for (const f of floating.values()) { f.box.remove(); f.stampEl.remove(); }
+        floating.clear();
+        if (layer) layer.host.remove();
+        layer = null;
+    }
+
+    function queuePlace() {
+        if (placeQueued) return;
+        placeQueued = true;
+        requestAnimationFrame(() => { placeQueued = false; placeAll(); });
+    }
+
+    function place(el, f) {
+        const r = el.getBoundingClientRect();
+        const hidden = !r.width || !r.height || r.bottom < 0 || r.top > innerHeight;
+        f.box.style.display = f.stampEl.style.display = hidden ? "none" : "block";
+        if (hidden) return;
+        Object.assign(f.box.style, { left: (r.left - 4) + "px", top: (r.top - 4) + "px",
+                                     width: (r.width + 8) + "px", height: (r.height + 8) + "px" });
+        const w = f.stampEl.offsetWidth;
+        f.stampEl.style.left = Math.max(4, Math.min(r.right - w - 12, innerWidth - w - 8)) + "px";
+        f.stampEl.style.top = Math.max(4, r.top + 4) + "px";
+    }
+
+    function placeAll() {
+        for (const [el, f] of floating) {
+            if (!el.isConnected) {   // the page removed the paragraph: its stamp goes too
+                f.box.remove(); f.stampEl.remove(); floating.delete(el);
+                continue;
+            }
+            place(el, f);
+        }
+    }
+
+    function floatMark(el, text) {
+        const style = TIER_STYLE.fix;
+        const prev = floating.get(el);
+        if (prev && prev.text === text) return false;
+        if (prev) { prev.box.remove(); prev.stampEl.remove(); }
+        const { root } = ensureLayer();
+        const box = document.createElement("div");
+        box.style.cssText = `position: fixed; box-sizing: border-box; border: ${style.outline};
+                             border-radius: 6px; box-shadow: ${style.glow}; pointer-events: none;`;
+        const stampEl = document.createElement("div");
+        stampEl.textContent = text;
+        stampEl.style.cssText = `
+            position: fixed; z-index: 1; font-family: 'Comic Sans MS', 'Comic Sans', cursive;
+            font-weight: 900; letter-spacing: 1px; white-space: nowrap; border-radius: 8px;
+            pointer-events: auto; cursor: pointer; transition: opacity 0.15s;
+            transform: rotate(${style.tilt}deg); ${style.stamp}`;
+        // See-through under the mouse, so the text beneath stays readable;
+        // a click opens the finding card.
+        stampEl.addEventListener("mouseenter", () => { stampEl.style.opacity = "0.15"; });
+        stampEl.addEventListener("mouseleave", () => { stampEl.style.opacity = "1"; });
+        stampEl.addEventListener("click", e => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (onStamp) onStamp(el, e);
+        });
+        root.append(box, stampEl);
+        const f = { box, stampEl, text };
+        floating.set(el, f);
+        place(el, f);
+        stampEl.animate([
+            { transform: `rotate(${style.tilt}deg) scale(2.4)`, opacity: 0 },
+            { transform: `rotate(${style.tilt}deg) scale(0.9)`, opacity: 1, offset: 0.7 },
+            { transform: `rotate(${style.tilt}deg) scale(1)`,   opacity: 1 },
+        ], { duration: 350, easing: "ease-in" });
+        slam(style.mood);
+        return true;
+    }
+
+    function mark(el, tier, text) {
         if (!active) return false;
+        if (tier === "fix") { try { return floatMark(el, text); } catch (e) { return false; } }
         const prev = marked.get(el);
         if (prev) {
             if (prev.tier === tier && prev.text === text && prev.stampEl.isConnected) return false;
@@ -317,11 +430,6 @@ const Parade = (() => {
                 transform: rotate(${style.tilt}deg);
                 ${style.stamp}
             `;
-            if (detail) {   // hover a FIXED stamp for each rule, before → after
-                stampEl.title = detail;
-                stampEl.style.pointerEvents = "auto";
-                stampEl.style.cursor = "help";
-            }
             el.appendChild(stampEl);
             stampEl.animate([
                 { transform: `rotate(${style.tilt}deg) scale(2.4)`, opacity: 0 },
@@ -344,6 +452,7 @@ const Parade = (() => {
     }
 
     function clear() {
+        dropLayer();
         for (const el of dimmed) for (const p of STYLED) el.style.removeProperty(p);
         dimmed.clear();
         for (const [el, m] of marked) {
@@ -387,13 +496,13 @@ const Parade = (() => {
         get state() {
             return { active, secondsLeft: active ? Math.max(0, Math.round((SAFETY_VALVE_MS - (Date.now() - activatedAt)) / 1000)) : 0 };
         },
-        setHooks(hooks) { onChange = hooks.onChange || onChange; },
+        setHooks(hooks) { onChange = hooks.onChange || onChange; onStamp = hooks.onStamp || onStamp; },
         toggle() { active ? off() : on(); return this.state; },
         hit:    (el, text) => mark(el, "hit",    `🤡 ${text}`),
         saved:  (el)       => mark(el, "saved",  "⭐ SAVED BY A HERO"),
         near:   (el, text) => mark(el, "near",   `😬 BARELY SURVIVED — ${text}`),
         spared: (el, text) => mark(el, "spared", `🍀 SPARED BY UPVOTES — ${text}`),
-        fixed:  (el, text, detail) => mark(el, "fix", `✏️ ${text}`, detail),
+        fixed:  (el, text) => mark(el, "fix", `✏️ ${text}`),
         dim,
         clear,
     };

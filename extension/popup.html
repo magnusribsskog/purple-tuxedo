@@ -95,7 +95,12 @@
   <h2>Other sites (experimental)</h2>
   <label class="check">Fix grammar on other sites <input type="checkbox" id="otherSites"></label>
   <button id="fixParade" hidden>🦆 Parade the fixes</button>
-  <p class="note" id="fixParadeNote" hidden>Stamps every paragraph fixed on this page; hover a stamp for each rule, before → after. Leaves by itself after ten minutes.</p>
+  <p class="note" id="fixParadeNote" hidden>Stamps every paragraph fixed on this page. Click a stamp to report it; alt-click any paragraph to report a fix it missed. Leaves by itself after ten minutes.</p>
+  <div id="reportBox" hidden>
+    <button id="ship">📮 Ship report</button>
+    <button id="discard" title="Throw away the findings in the report">✕</button>
+    <label>Report folder (inside Downloads) <input type="text" id="reportFolder" placeholder="tux-bugs"></label>
+  </div>
   <p class="note">Off by default. Some sites rebuild their pages in ways the fixer doesn't handle yet. Takes effect when a page next loads; a small pill on each page then shows what was changed and can switch it off for that site.</p>
 </section>
 

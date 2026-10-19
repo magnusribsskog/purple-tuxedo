@@ -161,3 +161,124 @@ function showFixer(r) {
 }
 askFixer('gf-state').then(showFixer);
 fixParade.addEventListener('click', async () => showFixer(await askFixer('gf-parade')));
+
+// ---- The report: findings from the cards, shipped as one .org file ----
+// A browser extension can only write NEW files, and only under Downloads, so
+// each report lands as its own file in a subfolder, never loose in Downloads.
+// Whoever receives it (a maintainer, or an AI assistant) reads it from there.
+
+const reportBox = document.getElementById('reportBox');
+const shipBtn = document.getElementById('ship');
+const folderInput = document.getElementById('reportFolder');
+
+function safeFolder(raw) {
+    const parts = String(raw || '').split(/[\\/]+/)
+        .map(p => p.replace(/[^\w .-]/g, '').trim())
+        .filter(p => p && p !== '.' && p !== '..');
+    return parts.join('/') || 'tux-bugs';
+}
+
+function orgStamp(d) {
+    const day = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()];
+    const p = n => String(n).padStart(2, '0');
+    return `[${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${day} ${p(d.getHours())}:${p(d.getMinutes())}]`;
+}
+
+function oneLine(text, max = 60) {
+    const s = String(text || '').replace(/\s+/g, ' ').trim();
+    return s.length > max ? s.slice(0, max) + '…' : s;
+}
+
+function headline(f) {
+    const c = f.corrections?.[0];
+    if (f.kind === 'missed' || !c) return `TODO ${f.verdict}: ${oneLine(f.before)}`;
+    const more = f.corrections.length > 1 ? ` (+${f.corrections.length - 1})` : '';
+    return `TODO ${f.verdict}: ${c.original} → ${c.replacement}${more}`;
+}
+
+function orgReport(findings) {
+    const now = new Date();
+    const out = [
+        `#+TITLE: Tux bug report ${orgStamp(now)}`,
+        `#+STARTUP: overview`,
+        `# A bug report from Purple Tuxedo's parade: one entry per finding, the`,
+        `# reporter's words first, then the exact data.`,
+        `# To send it: attach this file to an issue at`,
+        `#   https://github.com/magnusribsskog/purple-tuxedo/issues`,
+        `# or give it to your AI assistant together with the extension's source.`,
+        `# It holds the paragraphs you reported and the addresses of their pages;`,
+        `# read it through before you share it.`,
+        '',
+    ];
+    const bySite = new Map();
+    for (const f of findings) {
+        if (!bySite.has(f.host)) bySite.set(f.host, new Map());
+        const routes = bySite.get(f.host);
+        if (!routes.has(f.route)) routes.set(f.route, []);
+        routes.get(f.route).push(f);
+    }
+    for (const [host, routes] of bySite) {
+        out.push(`* ${host || '(local file)'}`);
+        for (const [route, list] of routes) {
+            out.push(`** ${route || '/'}`);
+            for (const f of list) {
+                const c = f.corrections?.[0];
+                out.push(`*** ${headline(f)}`,
+                    '    :PROPERTIES:',
+                    `    :ID:       ${f.id}`,
+                    `    :FOUND:    ${orgStamp(new Date(f.found))}`,
+                    `    :URL:      ${f.url}`,
+                    `    :KIND:     ${f.kind}`,
+                    `    :VERDICT:  ${f.verdict}`,
+                    `    :RULE:     ${c ? f.corrections.map(x => `${x.rule} (${x.confidence})`).join(', ') : '-'}`,
+                    `    :VERSION:  ${f.version} / engine ${f.engine}`,
+                    `    :DOM:      ${f.dom || '-'}`,
+                    '    :END:',
+                    '    #+begin_quote');
+                const note = f.note ? f.note.split('\n') : ['(no observation written)'];
+                for (const line of note) out.push('    ' + line);
+                out.push('    #+end_quote',
+                    '    #+begin_src json');
+                const data = { kind: f.kind, before: f.before, after: f.after, corrections: f.corrections };
+                for (const line of JSON.stringify(data, null, 2).split('\n')) out.push('    ' + line);
+                out.push('    #+end_src', '');
+            }
+        }
+    }
+    return out.join('\n') + '\n';
+}
+
+async function showReport() {
+    const { tuxBasket = [], tuxReportFolder } = await chrome.storage.local.get(['tuxBasket', 'tuxReportFolder']);
+    folderInput.value = tuxReportFolder || '';
+    reportBox.hidden = !tuxBasket.length;
+    shipBtn.textContent = `📮 Ship report (${tuxBasket.length})`;
+}
+
+folderInput.addEventListener('change', () =>
+    chrome.storage.local.set({ tuxReportFolder: safeFolder(folderInput.value) }).then(showReport));
+
+shipBtn.addEventListener('click', async () => {
+    const { tuxBasket = [], tuxReportFolder } = await chrome.storage.local.get(['tuxBasket', 'tuxReportFolder']);
+    if (!tuxBasket.length) return;
+    const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
+    const filename = `${safeFolder(tuxReportFolder)}/tux-report-${stamp}.org`;
+    // As plain bytes: given text/plain, Chrome renames the file to .txt.
+    const url = 'data:application/octet-stream;charset=utf-8,' + encodeURIComponent(orgReport(tuxBasket));
+    try {
+        await chrome.downloads.download({ url, filename, conflictAction: 'uniquify', saveAs: false });
+        await chrome.storage.local.set({ tuxBasket: [] });
+        shipBtn.textContent = '📮 Shipped';
+        setTimeout(showReport, 1500);
+    } catch (e) {
+        shipBtn.textContent = '📮 Could not save: ' + (e.message || e);
+    }
+});
+
+document.getElementById('discard').addEventListener('click', async () => {
+    if (!confirm('Throw away the findings in the report?')) return;
+    await chrome.storage.local.set({ tuxBasket: [] });
+    showReport();
+});
+
+showReport();
