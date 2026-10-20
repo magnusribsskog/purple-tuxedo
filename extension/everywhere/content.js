@@ -1184,9 +1184,15 @@
         const { fixOtherSites } = await chrome.storage.local.get('fixOtherSites');
         if (fixOtherSites !== true) return;
         if (IN_FRAME && !frameBigEnough()) {
+            // Resize events ride on rendering, which a background tab (or a
+            // headless run) may never do; a slow poll backs them up for two
+            // minutes.
+            let polls = 0;
+            const poll = setInterval(() => { if (++polls > 120) clearInterval(poll); else grow(); }, 1000);
             const grow = () => {
                 if (!frameBigEnough()) return;
                 window.removeEventListener('resize', grow);
+                clearInterval(poll);
                 start().catch(err => console.error('[Grammar Fixer v0.1] failed to start', err));
             };
             window.addEventListener('resize', grow);
