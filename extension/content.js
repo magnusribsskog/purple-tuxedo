@@ -26,6 +26,9 @@
  * Text correction is handled by grammar-fixer.js (GrammarFixer, PlaceholderProtector).
  * Slop scoring lives here.
  *
+ * v1.3.5 — comment sections inside iframes (Disqus and friends) are reached:
+ *          the cross-site scripts run in every frame big enough for prose,
+ *          so ad slots stay untouched; one parade judge per tab.
  * v1.3.4 — the grammar engine takes language packs. English is the first
  *          and only one; text in a language without a pack is left alone.
  * v1.3.3 — the parade follows you through a site: a fresh page load
@@ -881,7 +884,7 @@
                 this.intersectionObserver.observe(el);
             });
 
-            console.log(`Purple Tuxedo of Shame v1.3.4 active`);
+            console.log(`Purple Tuxedo of Shame v1.3.5 active`);
             console.log(` Nuke: <${CONFIG.MIN_LENGTH} chars | Save: ${CONFIG.CHILD_MIN_LENGTH} chars / ${CONFIG.CHILD_MIN_WORDS} words`);
             console.log(` Score threshold: ${CONFIG.SCORE_NUKE_THRESHOLD} | Upvote immunity: ${CONFIG.USE_UPVOTE_IMMUNITY ? `>=${CONFIG.UPVOTE_THRESHOLD}` : 'OFF'}`);
         }
@@ -967,7 +970,7 @@
                 return;
             }
             if (msg?.type !== 'tux-stats') return;
-            reply({ parade: typeof Parade !== 'undefined' ? Parade.state : null, version: '1.3.4', stats: STATS, config: Object.fromEntries(TUNABLE.map(k => [k, CONFIG[k]])),
+            reply({ parade: typeof Parade !== 'undefined' ? Parade.state : null, version: '1.3.5', stats: STATS, config: Object.fromEntries(TUNABLE.map(k => [k, CONFIG[k]])),
                     defaults: { ...DEFAULTS, slopWeights: DEFAULT_SLOP_WEIGHTS }, slopWeights: SLOP_WEIGHTS, comments: document.querySelectorAll('shreddit-comment').length });
         });
     }

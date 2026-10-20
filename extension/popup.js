@@ -146,9 +146,17 @@ otherSites.addEventListener('change', () => chrome.storage.local.set({ fixOtherS
 // The parade off Reddit: only answered where the fixer is switched on and
 // running (everywhere/content.js). On Reddit, and where it is off, no answer.
 const fixParade = document.getElementById('fixParade');
+// The fixer runs in every big-enough frame (comment sections are often
+// iframes), and a broadcast answers with whichever frame replies first. So
+// ask the top frame, and after a toggle tell all frames which way it went.
 async function askFixer(type) {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    try { return await chrome.tabs.sendMessage(tab.id, { type }); } catch { return null; }
+    let r = null;
+    try { r = await chrome.tabs.sendMessage(tab.id, { type }, { frameId: 0 }); } catch { return null; }
+    if (type === 'gf-parade' && r) {
+        try { await chrome.tabs.sendMessage(tab.id, { type: 'gf-parade-set', on: r.parade.active }); } catch {}
+    }
+    return r;
 }
 function showFixer(r) {
     if (!r) return;

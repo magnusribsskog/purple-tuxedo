@@ -469,6 +469,10 @@ const Parade = (() => {
 
     // ======================== LIFECYCLE ========================
     const RESUME_KEY = 'tux-parade-until';
+    // In an iframe (a Disqus thread, say) the parade only stamps: the judge,
+    // fanfare, banners, confetti and parachutes belong to the top page, or
+    // every frame would seat its own duck.
+    const IN_FRAME = window !== window.top;
     function remember(until) {
         try { until ? sessionStorage.setItem(RESUME_KEY, String(until)) : sessionStorage.removeItem(RESUME_KEY); } catch (_) {}
     }
@@ -479,6 +483,11 @@ const Parade = (() => {
         const valve = resumeUntil ? resumeUntil - Date.now() : SAFETY_VALVE_MS;
         activatedAt = Date.now() - (SAFETY_VALVE_MS - valve);
         remember(activatedAt + SAFETY_VALVE_MS);
+        if (IN_FRAME) {
+            safetyTimer = setTimeout(() => off(), valve);
+            onChange();
+            return;
+        }
         if (resumeUntil) {
             // A new page in the same session: the court resumes quietly.
             seatJudge();
@@ -515,8 +524,7 @@ const Parade = (() => {
         clearInterval(chaosTimer);
         safetyTimer = chaosTimer = null;
         clear();
-        unseatJudge();
-        banner(text);
+        if (!IN_FRAME) { unseatJudge(); banner(text); }
         onChange();
     }
 

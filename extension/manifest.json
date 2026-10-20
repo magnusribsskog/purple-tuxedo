@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Purple Tuxedo of Shame",
-  "version": "1.3.4",
+  "version": "1.3.5",
   "description": "Hides low-effort Reddit comments and highlights good replies. Fixes common grammar slips on Reddit; other sites are experimental.",
   "icons": {
     "16": "icons/icon16.png",
@@ -35,7 +35,8 @@
         "everywhere/shadow-hook.js"
       ],
       "run_at": "document_start",
-      "world": "MAIN"
+      "world": "MAIN",
+      "all_frames": true
     },
     {
       "matches": [
@@ -51,7 +52,8 @@
         "everywhere/report.js",
         "everywhere/content.js"
       ],
-      "run_at": "document_idle"
+      "run_at": "document_idle",
+      "all_frames": true
     }
   ],
   "permissions": [

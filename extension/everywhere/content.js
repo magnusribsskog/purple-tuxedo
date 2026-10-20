@@ -1164,6 +1164,18 @@
         if (host && host.shadowRoot) observeRoot(host.shadowRoot);
     }, true);
 
+    // Frames: comment sections such as Disqus live in
+    // an iframe from another site, which a top-frame-only script never sees.
+    // So the scripts run in every frame, and a frame starts only once it is
+    // big enough to hold prose: ad slots (300x250 and friends) stay untouched.
+    // Comment frames often begin small and grow as they load, so a small
+    // frame waits for a resize instead of giving up.
+    const IN_FRAME = window !== window.top;
+    const MIN_FRAME_W = 400, MIN_FRAME_H = 300;
+    function frameBigEnough() {
+        return window.innerWidth >= MIN_FRAME_W && window.innerHeight >= MIN_FRAME_H;
+    }
+
     async function start() {
         // Experimental, and off by default (2026-10-18): on some
         // sites the fixer still does odd things. Until it is switched on in
@@ -1171,13 +1183,30 @@
         // pill. Switching it on takes effect at the next page load.
         const { fixOtherSites } = await chrome.storage.local.get('fixOtherSites');
         if (fixOtherSites !== true) return;
+        if (IN_FRAME && !frameBigEnough()) {
+            const grow = () => {
+                if (!frameBigEnough()) return;
+                window.removeEventListener('resize', grow);
+                start().catch(err => console.error('[Grammar Fixer v0.1] failed to start', err));
+            };
+            window.addEventListener('resize', grow);
+            return;
+        }
+        if (switchedOn) return;
         switchedOn = true;
 
         if (typeof Parade !== 'undefined') {
             Parade.setHooks({ onChange: paradeAll, onStamp: openFinding });
             Parade.resume();
             document.addEventListener('click', onAltClick, true);
+            // The panel asks the top frame (frameId 0) for state and toggles it
+            // there, then tells every frame which way it went ('gf-parade-set'),
+            // so frames follow the top instead of each toggling on its own.
             chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
+                if (msg?.type === 'gf-parade-set') {
+                    if (msg.on !== Parade.active) Parade.toggle();
+                    return;
+                }
                 if (msg?.type !== 'gf-state' && msg?.type !== 'gf-parade') return;
                 if (msg.type === 'gf-parade') Parade.toggle();
                 reply({ parade: Parade.state, fixes: state.totalCorrections, host: location.hostname });
@@ -1202,7 +1231,8 @@
 
         // This development build keeps the compact control reachable so a
         // bad correction can be exported with its receipts immediately.
-        showControl(false);
+        // One pill per tab: frames do not get their own.
+        if (!IN_FRAME) showControl(false);
 
         console.log(
             '[Grammar Fixer v0.1] active on',
