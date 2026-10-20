@@ -84,8 +84,17 @@ function joinKnownContractions(text, dictionary) {
  *   init()       optional, compile what the pack needs
  *   prepare(t)   optional, normalise protected text before rewriting
  *   rewrite(t, map)   the pack's rules; returns the rewritten protected text
- *   wordPattern  optional, a global regex for words in diagnostics
- *   ruleFor(source, after)   { ruleId, confidence } for one changed word
+ *   wordPattern  required, a global regex for this language's words
+ *   ruleFor(before, after)   { ruleId, confidence } for one changed word,
+ *                given both words exactly as written; the pack normalises
+ *
+ * The contract today is word-preserving: rewrite() may only replace a word
+ * with another word in the same place (don't for dont, I for i, a capital).
+ * The core finds corrections by pairing the words before and after, so a
+ * rewrite that adds punctuation, changes spacing, splits, merges or reorders
+ * words is returned by fix() but produces no correction and never reaches
+ * the page. A pack that needs those must first get explicit span edits from
+ * the core.
  */
 const EnglishPack = {
     code: 'en',
@@ -287,7 +296,8 @@ const EnglishPack = {
 
     wordPattern: /[A-Za-z]+(?:[\u200B-\u200D\u2060\uFEFF]+[A-Za-z]+)*(?:'[A-Za-z]+)?/g,
 
-    ruleFor(source, after) {
+    ruleFor(before, after) {
+        const source = before.replace(invisibleSeam, '').toLowerCase();
         if (this.dictionary[source]) return { ruleId: `contraction.${source}`, confidence: 'high' };
         if (source === 'im' && after.toLowerCase() === "i'm") return { ruleId: 'contraction.im-contextual', confidence: 'contextual' };
         if (source === 'cant' && /^can't$/i.test(after)) return { ruleId: 'contraction.cant-contextual', confidence: 'contextual' };
@@ -301,6 +311,9 @@ const GrammarFixer = {
     defaultPack: 'en',
 
     registerPack(pack) {
+        if (!pack.code || !pack.rewrite || !pack.ruleFor || !(pack.wordPattern instanceof RegExp) || !pack.wordPattern.global) {
+            throw new Error('A language pack needs code, rewrite, ruleFor and a global wordPattern');
+        }
         this.packs[pack.code] = pack;
         if (pack.init) pack.init();
         return pack;
@@ -352,8 +365,7 @@ const GrammarFixer = {
         if (output === text) return { text: output, corrections };
 
         const pack = this.packFor(language);
-        const words = pack.wordPattern || /[\p{L}']+/gu;
-        const wordPattern = new RegExp(words.source, words.flags);
+        const wordPattern = new RegExp(pack.wordPattern.source, pack.wordPattern.flags);
         const originalWords = [...text.matchAll(wordPattern)];
         const outputWords = [...output.matchAll(wordPattern)];
 
@@ -370,8 +382,7 @@ const GrammarFixer = {
 
             if (before[0] === after[0]) continue;
 
-            const source = before[0].replace(invisibleSeam, '').toLowerCase();
-            const { ruleId, confidence } = pack.ruleFor(source, after[0]);
+            const { ruleId, confidence } = pack.ruleFor(before[0], after[0]);
 
             corrections.push({
                 ruleId,
