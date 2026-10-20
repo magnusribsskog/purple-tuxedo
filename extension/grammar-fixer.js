@@ -1,6 +1,7 @@
 // Grammar Fixer v0.1
 // Standalone, conservative English text correction for rendered web prose.
-// No DOM dependencies. Exposes PlaceholderProtector and GrammarFixer.
+// No DOM dependencies. Exposes PlaceholderProtector, GrammarFixer and its
+// language packs (EnglishPack, the only one shipped).
 
 const PlaceholderProtector = {
     getDefaultPatterns() {
@@ -69,7 +70,27 @@ function joinKnownContractions(text, dictionary) {
     });
 }
 
-const GrammarFixer = {
+/*
+ * A language pack owns everything about one language: its words, its rules,
+ * its guards and the names of its rules in diagnostics. The engine owns what
+ * is the same in every language: protecting code, links and quotes, mapping a
+ * paragraph back onto its pieces, and diffing a fix into correction records.
+ *
+ * English is the only pack, and the scope is English grammar. Other languages, if they ever come, arrive as packs with their
+ * own corpus; the core does not grow rules for them.
+ *
+ * A pack provides:
+ *   code         an ISO 639-1 code, matched against the language hint
+ *   init()       optional, compile what the pack needs
+ *   prepare(t)   optional, normalise protected text before rewriting
+ *   rewrite(t, map)   the pack's rules; returns the rewritten protected text
+ *   wordPattern  optional, a global regex for words in diagnostics
+ *   ruleFor(source, after)   { ruleId, confidence } for one changed word
+ */
+const EnglishPack = {
+    code: 'en',
+    name: 'English',
+
     // Global mode deliberately contains grammar repairs only. Slang expansion is
     // omitted because changing meaning on arbitrary sites is worse than leaving
     // informal prose alone.
@@ -105,7 +126,7 @@ const GrammarFixer = {
         "but", "what", "when", "where", "would", "could", "should", "been",
         "will", "there", "then", "than", "because",
         // Casual English. A 56-word Reddit comment scored 4 hits on the list
-        // above and was skipped whole . None of these is a common
+        // above and was skipped whole (2026-10-14). None of these is a common
         // Norwegian or German word.
         "a", "of", "to", "it", "is", "my", "just", "like", "about", "really",
         "some", "any", "do", "does", "did", "get", "got", "can", "how", "why",
@@ -180,22 +201,13 @@ const GrammarFixer = {
         return hits / words.length >= this.langDetectThreshold;
     },
 
-    /*
-     * `language` is an optional hint from the browser layer, which owns
-     * detection (chrome.i18n) and caching; the engine stays synchronous.
-     *   'en'      a reliable English verdict: today's rules, no loosening
-     *   'other'   a reliable non-English verdict: change nothing at all.
-     *             Not only the ambiguous words: "dont" is ordinary French.
-     *   omitted   unknown: today's rules and their local guards decide.
-     */
-    fix(text, language) {
-        if (language === 'other') return text;
-        if (!text || text.length < 3) return text;
-        if (!this.dictRegex) this.init();
+    prepare(protectedText) {
+        return joinKnownContractions(protectedText, this.dictionary);
+    },
 
-        const { text: protectedText, map } = PlaceholderProtector.replaceProtected(text);
-        const readableText = joinKnownContractions(protectedText, this.dictionary);
-        // No whole-text language gate : it skipped
+    rewrite(readableText, map) {
+        if (!this.dictRegex) this.init();
+        // No whole-text language gate: it skipped
         // ordinary casual English wholesale. Only the two words that are
         // genuinely ambiguous across languages keep a check of their own:
         // `im` (German) and `i` (Norwegian, Danish, Swedish "in").
@@ -247,12 +259,14 @@ const GrammarFixer = {
             // context. Do not alter a bare fragment merely for casing.
             if (offset === 0 && /^\s*(?:cant|im|wont)\b/i.test(full)) return match;
             // A label, not a sentence: three words or fewer and no sentence
-            // punctuation. Names, tags and buttons keep their first word as
-            // written (a reviewer's "joanne alderton" was half-capitalised).
-            // Cost: "lol same" stays lowercase, and a miss is the cheaper error.
+            // punctuation. A reviewer's name ("joanne alderton" on Amazon,
+            // 2026-10-19) came out half-capitalised; names, tags and buttons
+            // keep their first word as written. Cost: "lol same" stays
+            // lowercase, and a miss is the cheaper error.
             if (offset === 0 && !/[.!?]/.test(full) && full.trim().split(/\s+/).length <= 3) return match;
-            // A handle or an identifier, not a word: its case is its spelling
-            // (gueris24, gueris_tv, xX_gamer_Xx, v2, iPhone).
+            // A handle or an identifier, not a word: its case is its spelling.
+            // gueris24, gueris_tv, xX_gamer_Xx, v2, iPhone (Twitch chat, seen
+            // 2026-10-19 through the parade's first bug report).
             const token = p2 + (full.slice(offset + match.length).match(/^\S*/)?.[0] || '');
             if (/[\d_]/.test(token) || /[A-Z]/.test(token.slice(1))) return match;
             const before = full.substring(0, offset);
@@ -260,14 +274,70 @@ const GrammarFixer = {
             const prev = rawPrev.replace(/[.,!?;:"'()[\]]+$/, '').toLowerCase();
             if (this.abbreviations.has(prev)) return match;
             // An initialism's last stop is not a sentence end: U.S., D.C.,
-            // a.m., Ph.D. Had the writer ended a sentence there, the next word
-            // would already be capitalised and nothing changes.
+            // a.m., Ph.D. (Facebook, 2026-10-19: "the U.S. would" became
+            // "the U.S. Would"). Had the writer ended a sentence there, the
+            // next word would already be capitalised and nothing changes.
             // (The match begins at the stop itself, so put it back first.)
             if (/^\(?(?:[A-Za-z]{1,2}\.){2,}$/.test(rawPrev + p1.trim())) return match;
             return p1 + p2.toUpperCase();
         });
 
-        return PlaceholderProtector.restore(fixed, map);
+        return fixed;
+    },
+
+    wordPattern: /[A-Za-z]+(?:[\u200B-\u200D\u2060\uFEFF]+[A-Za-z]+)*(?:'[A-Za-z]+)?/g,
+
+    ruleFor(source, after) {
+        if (this.dictionary[source]) return { ruleId: `contraction.${source}`, confidence: 'high' };
+        if (source === 'im' && after.toLowerCase() === "i'm") return { ruleId: 'contraction.im-contextual', confidence: 'contextual' };
+        if (source === 'cant' && /^can't$/i.test(after)) return { ruleId: 'contraction.cant-contextual', confidence: 'contextual' };
+        if (source === 'i' && after === 'I') return { ruleId: 'pronoun.i', confidence: 'high' };
+        return { ruleId: 'capitalization.sentence-start', confidence: 'high' };
+    },
+};
+
+const GrammarFixer = {
+    packs: {},
+    defaultPack: 'en',
+
+    registerPack(pack) {
+        this.packs[pack.code] = pack;
+        if (pack.init) pack.init();
+        return pack;
+    },
+
+    /*
+     * `language` is an optional hint from the browser layer, which owns
+     * detection (chrome.i18n) and caching; the engine stays synchronous.
+     *   a code ('en', 'fr', 'nb' ...)  a reliable verdict: that language's
+     *              pack, or no change at all when there is no pack for it.
+     *              Not only the ambiguous words: "dont" is ordinary French.
+     *   'other'    a reliable non-English verdict without a code: no change
+     *   omitted    unknown: the default pack, with its own local guards
+     */
+    packFor(language) {
+        if (language === undefined || language === null) return this.packs[this.defaultPack] || null;
+        const code = String(language).toLowerCase().split(/[-_]/)[0];
+        return this.packs[code] || null;
+    },
+
+    // Views onto the English pack, for callers and tests written before packs.
+    get dictionary() { return this.packs.en.dictionary; },
+    get abbreviations() { return this.packs.en.abbreviations; },
+    get sentenceStartRegex() { return this.packs.en.sentenceStartRegex; },
+    get dictRegex() { return this.packs.en.dictRegex; },
+    set dictRegex(value) { this.packs.en.dictRegex = value; },
+    looksLikeEnglish(text) { return this.packs.en.looksLikeEnglish(text); },
+    init() { for (const pack of Object.values(this.packs)) if (pack.init) pack.init(); },
+
+    fix(text, language) {
+        const pack = this.packFor(language);
+        if (!pack) return text;
+        if (!text || text.length < 3) return text;
+
+        const { text: protectedText, map } = PlaceholderProtector.replaceProtected(text);
+        const readableText = pack.prepare ? pack.prepare(protectedText) : protectedText;
+        return PlaceholderProtector.restore(pack.rewrite(readableText, map), map);
     },
 
     /*
@@ -281,7 +351,9 @@ const GrammarFixer = {
 
         if (output === text) return { text: output, corrections };
 
-        const wordPattern = /[A-Za-z]+(?:[\u200B-\u200D\u2060\uFEFF]+[A-Za-z]+)*(?:'[A-Za-z]+)?/g;
+        const pack = this.packFor(language);
+        const words = pack.wordPattern || /[\p{L}']+/gu;
+        const wordPattern = new RegExp(words.source, words.flags);
         const originalWords = [...text.matchAll(wordPattern)];
         const outputWords = [...output.matchAll(wordPattern)];
 
@@ -299,21 +371,7 @@ const GrammarFixer = {
             if (before[0] === after[0]) continue;
 
             const source = before[0].replace(invisibleSeam, '').toLowerCase();
-            const dictionaryEntry = this.dictionary[source];
-            let ruleId = 'capitalization.sentence-start';
-            let confidence = 'high';
-
-            if (dictionaryEntry) {
-                ruleId = `contraction.${source}`;
-            } else if (source === 'im' && after[0].toLowerCase() === "i'm") {
-                ruleId = 'contraction.im-contextual';
-                confidence = 'contextual';
-            } else if (source === 'cant' && /^can't$/i.test(after[0])) {
-                ruleId = 'contraction.cant-contextual';
-                confidence = 'contextual';
-            } else if (source === 'i' && after[0] === 'I') {
-                ruleId = 'pronoun.i';
-            }
+            const { ruleId, confidence } = pack.ruleFor(source, after[0]);
 
             corrections.push({
                 ruleId,
@@ -383,10 +441,10 @@ const GrammarFixer = {
     }
 };
 
-GrammarFixer.init();
+GrammarFixer.registerPack(EnglishPack);
 
 // Browser content scripts use the globals above. Node uses this guarded export
 // for the dependency-free corpus runner.
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { GrammarFixer, PlaceholderProtector };
+    module.exports = { GrammarFixer, PlaceholderProtector, EnglishPack };
 }

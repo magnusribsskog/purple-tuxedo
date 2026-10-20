@@ -60,12 +60,14 @@
     // owned here so the engine stays synchronous. It is only trustworthy
     // when it says so: short text comes back unreliable and often absurd
     // (measured 2026-10-20). The rule:
-    //   paragraph reliably English     -> 'en'    (today's rules, no loosening)
-    //   paragraph reliably not English -> 'other' (change nothing at all)
-    //   paragraph unreliable           -> the page verdict, if it is 'other';
-    //                                     otherwise unknown (today's guards)
+    //   paragraph reliably detected -> its language code; the engine runs that
+    //                                  language's pack, or changes nothing if
+    //                                  it has none (English is the only pack)
+    //   paragraph unreliable        -> the page's code, if the page is reliably
+    //                                  not English; otherwise unknown (the
+    //                                  default pack and its own guards)
     // The page verdict needs long main text, is corroborated by <html lang>
-    // where present, is never 'en', and is recomputed per route.
+    // where present, is never English, and is recomputed per route.
     const Lang = {
         verdicts: new WeakMap(),
         page: null,
@@ -90,7 +92,7 @@
                 if (!r || !r.isReliable || this.english(r)) return undefined;
                 const declared = (document.documentElement.lang || '').toLowerCase();
                 if (declared.startsWith('en')) return undefined;   // the page and its text disagree
-                return 'other';
+                return r.languages[0].language;
             })();
             return this.page;
         },
@@ -99,8 +101,8 @@
             if (cached && cached.text === text) return cached.hint;
             const r = await this.detect(text);
             let hint;
-            if (r && r.isReliable) hint = this.english(r) ? 'en' : 'other';
-            else if ((await this.pageHint()) === 'other') hint = 'other';
+            if (r && r.isReliable && r.languages?.[0]) hint = r.languages[0].language;
+            else hint = await this.pageHint();
             this.verdicts.set(block, { text, hint });
             return hint;
         },
@@ -355,7 +357,8 @@
         // own mutation has queued it again.
         if (!block.isConnected ||
             collectSegments(block).map(seg => seg.text).join('') !== joined) return;
-        if (language === 'other') { state.metrics.languageSkips++; return; }
+        // A language without a pack is left alone entirely.
+        if (language && !GrammarFixer.packFor(language)) { state.metrics.languageSkips++; return; }
 
         const frozen = segments.map(seg => seg.frozen || !seg.node);
         const result = GrammarFixer.fixSegments(texts, frozen, language);
