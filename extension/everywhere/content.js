@@ -53,6 +53,56 @@
             changedNodes: 0,
             queuePeak: 0,
             observedRoots: 0,
+            languageSkips: 0,
+        },
+    };
+    // Language evidence from Chrome's built-in detector (chrome.i18n, CLD3),
+    // owned here so the engine stays synchronous. It is only trustworthy
+    // when it says so: short text comes back unreliable and often absurd
+    // (measured 2026-10-20). The rule:
+    //   paragraph reliably English     -> 'en'    (today's rules, no loosening)
+    //   paragraph reliably not English -> 'other' (change nothing at all)
+    //   paragraph unreliable           -> the page verdict, if it is 'other';
+    //                                     otherwise unknown (today's guards)
+    // The page verdict needs long main text, is corroborated by <html lang>
+    // where present, is never 'en', and is recomputed per route.
+    const Lang = {
+        verdicts: new WeakMap(),
+        page: null,
+        pageUrl: null,
+        detect(text) {
+            try {
+                return Promise.resolve(chrome.i18n.detectLanguage(text)).catch(() => null);
+            } catch (_) {
+                return Promise.resolve(null);   // no i18n here (tests, old browsers)
+            }
+        },
+        english(r) { return r.languages?.[0]?.language === 'en'; },
+        pageHint() {
+            if (this.page && this.pageUrl === location.href) return this.page;
+            this.pageUrl = location.href;
+            const root = document.querySelector('main, article, [role="main"]') || document.body;
+            const sample = (root?.innerText || '').slice(0, 5000);
+            // Too little text to judge yet: say nothing, and ask again later.
+            if (sample.split(/\s+/).length < 60) { this.page = null; return Promise.resolve(undefined); }
+            this.page = (async () => {
+                const r = await this.detect(sample);
+                if (!r || !r.isReliable || this.english(r)) return undefined;
+                const declared = (document.documentElement.lang || '').toLowerCase();
+                if (declared.startsWith('en')) return undefined;   // the page and its text disagree
+                return 'other';
+            })();
+            return this.page;
+        },
+        async hintFor(block, text) {
+            const cached = this.verdicts.get(block);
+            if (cached && cached.text === text) return cached.hint;
+            const r = await this.detect(text);
+            let hint;
+            if (r && r.isReliable) hint = this.english(r) ? 'en' : 'other';
+            else if ((await this.pageHint()) === 'other') hint = 'other';
+            this.verdicts.set(block, { text, hint });
+            return hint;
         },
     };
 
@@ -255,7 +305,7 @@
 
         for (const block of state.queue) {
             state.queue.delete(block);
-            processBlock(block);
+            processBlock(block).catch(err => console.warn('[Grammar Fixer] block failed', err));
 
             processed++;
 
@@ -279,7 +329,7 @@
         return !!label && (label.textContent || '').trim().length <= MAX_LABEL_CHARS;
     }
 
-    function processBlock(block) {
+    async function processBlock(block) {
         if (!block || !block.isConnected) return;
         // A block that is itself a link, code, input or editable region is
         // outside the correction surface as a whole.
@@ -298,8 +348,17 @@
         // something else into any node of the block, this no longer matches.
         if (state.lastBlock.get(block) === joined) return;
 
+        // The first correction waits for the language verdict: an edit cannot
+        // safely be taken back after learning the paragraph is not English.
+        const language = await Lang.hintFor(block, joined);
+        // The page may have rewritten the block while we waited; if so, its
+        // own mutation has queued it again.
+        if (!block.isConnected ||
+            collectSegments(block).map(seg => seg.text).join('') !== joined) return;
+        if (language === 'other') { state.metrics.languageSkips++; return; }
+
         const frozen = segments.map(seg => seg.frozen || !seg.node);
-        const result = GrammarFixer.fixSegments(texts, frozen);
+        const result = GrammarFixer.fixSegments(texts, frozen, language);
         if (!result.corrections.length) {
             state.lastBlock.delete(block);
             return;

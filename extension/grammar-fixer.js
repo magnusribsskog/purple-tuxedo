@@ -180,7 +180,16 @@ const GrammarFixer = {
         return hits / words.length >= this.langDetectThreshold;
     },
 
-    fix(text) {
+    /*
+     * `language` is an optional hint from the browser layer, which owns
+     * detection (chrome.i18n) and caching; the engine stays synchronous.
+     *   'en'      a reliable English verdict: today's rules, no loosening
+     *   'other'   a reliable non-English verdict: change nothing at all.
+     *             Not only the ambiguous words: "dont" is ordinary French.
+     *   omitted   unknown: today's rules and their local guards decide.
+     */
+    fix(text, language) {
+        if (language === 'other') return text;
         if (!text || text.length < 3) return text;
         if (!this.dictRegex) this.init();
 
@@ -266,8 +275,8 @@ const GrammarFixer = {
      * string-only API; controls and tests can opt into stable correction
      * records without making DOM code understand individual grammar rules.
      */
-    fixDetailed(text) {
-        const output = this.fix(text);
+    fixDetailed(text, language) {
+        const output = this.fix(text, language);
         const corrections = [];
 
         if (output === text) return { text: output, corrections };
@@ -339,12 +348,12 @@ const GrammarFixer = {
      * Returns { parts, corrections }: parts has the same length as the input,
      * and each correction carries the index of the piece it changed.
      */
-    fixSegments(parts, frozen = []) {
+    fixSegments(parts, frozen = [], language) {
         const joined = parts.join('');
         const result = { parts: parts.slice(), corrections: [] };
         if (!joined.trim()) return result;
 
-        const { corrections } = this.fixDetailed(joined);
+        const { corrections } = this.fixDetailed(joined, language);
         if (!corrections.length) return result;
 
         const starts = [];
