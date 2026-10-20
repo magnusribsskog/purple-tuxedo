@@ -131,6 +131,19 @@ const GrammarFixer = {
 
     // `im` is a common German preposition. Without a page-level language
     // decision, repair it only beside a small set of strongly English cues.
+    // `cant` is a real noun (religious cant, thieves' cant), an engineering
+    // term (railway cant, degrees of cant) and a transitive verb ("they cant
+    // the track on the curve"). So it is fixed only on positive evidence of
+    // can't: a bare verb follows (optionally after one adverb), or it opens
+    // a question before a pronoun. A noun or engineering word in front always
+    // wins. Lowercase or sentence-initial only, so CANT and a mid-sentence
+    // surname stay. A larger grammar library was measured for this and rejected:
+    // it rewrote "religious cant" and "railway cant".
+    contextualCantRegex: new RegExp(
+        String.raw`(?<!\b(?:the|a|an|this|that|such|mere|empty|pure|their|his|her|its|our|your|religious|political|pious|moral|legal|academic|sentimental|hypocritical|thieves'?|railway|rail|track|wheel|blade|camber)\s+)` +
+        String.raw`(?:(?:\bcant|(?<=^\s*|[.!?]\s+)Cant)\b(?=\s+(?:(?:even|really|just|possibly|ever|still|actually|quite|totally|honestly|literally|seriously|simply|always|never)\s+)?(?:be|go|get|do|see|wait|believe|stand|sleep|find|make|take|tell|say|think|help|stop|remember|understand|imagine|afford|figure|hear|read|decide|keep|let|leave|live|stay|win|lose|play|work|eat|breathe|move|focus|explain|handle|deal|trust|agree|argue|seem|put|give|come|look|feel|know|have|use|buy|pay|change|open|close|fix|run|walk|talk|speak|write|watch|access|log|load|sign|connect|login|wrap|care|bear|face|hold|reach|catch|beat|finish|start|install|send|post|join|call|relax|function|tolerate|resist|recall|picture|describe|express|even)\b))` +
+        String.raw`|(?:(?<=^\s*|[.!?]\s+)Cant\b(?=\s+(?:you|i|we|they|he|she|it|u|anyone|someone|people)\b))`,
+        'g'),
     contextualImRegex: /\bim\b(?=\s+(?:actually|already|also|back|certain|currently|done|fine|glad|going|happy|here|just|not|okay|only|probably|quite|ready|really|sorry|still|sure|there|trying|very)\b)/gi,
 
     // With a whole English paragraph in view, `im` is I'm. German `im` is
@@ -181,6 +194,8 @@ const GrammarFixer = {
 
         let fixed = readableText;
         fixed = fixed.replace(this.contextualImRegex, "I'm");
+        this.contextualCantRegex.lastIndex = 0;
+        fixed = fixed.replace(this.contextualCantRegex, m => m === 'Cant' ? "Can't" : "can't");
         if (english) {
             this.generalImRegex.lastIndex = 0;
             fixed = fixed.replace(this.generalImRegex, "I'm");
@@ -283,6 +298,9 @@ const GrammarFixer = {
                 ruleId = `contraction.${source}`;
             } else if (source === 'im' && after[0].toLowerCase() === "i'm") {
                 ruleId = 'contraction.im-contextual';
+                confidence = 'contextual';
+            } else if (source === 'cant' && /^can't$/i.test(after[0])) {
+                ruleId = 'contraction.cant-contextual';
                 confidence = 'contextual';
             } else if (source === 'i' && after[0] === 'I') {
                 ruleId = 'pronoun.i';
