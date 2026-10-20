@@ -1172,6 +1172,7 @@
 
         if (typeof Parade !== 'undefined') {
             Parade.setHooks({ onChange: paradeAll, onStamp: openFinding });
+            Parade.resume();
             document.addEventListener('click', onAltClick, true);
             chrome.runtime.onMessage.addListener((msg, _sender, reply) => {
                 if (msg?.type !== 'gf-state' && msg?.type !== 'gf-parade') return;

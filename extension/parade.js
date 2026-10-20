@@ -23,6 +23,11 @@
  *     elements, pointer-events none, removed on exit.
  *   - Session-only, with a safety valve: the parade leaves after ten minutes,
  *     because nobody should come back to a courtroom they forgot convening.
+ *   - It follows you through the site: most sites load
+ *     a fresh page per click, which used to end the parade. Its end time is
+ *     kept in this tab's sessionStorage for this site, so the next page
+ *     resumes it until the ten minutes run out, you turn it off, or you
+ *     leave the site (another origin) or close the tab.
  *   - No external assets. All audio is synthesized.
  *
  * Loaded before content.js; content.js calls in, the parade never reaches
@@ -463,10 +468,26 @@ const Parade = (() => {
     }
 
     // ======================== LIFECYCLE ========================
-    function on() {
+    const RESUME_KEY = 'tux-parade-until';
+    function remember(until) {
+        try { until ? sessionStorage.setItem(RESUME_KEY, String(until)) : sessionStorage.removeItem(RESUME_KEY); } catch (_) {}
+    }
+
+    function on(resumeUntil = 0) {
         if (active) return;
         active = true;
-        activatedAt = Date.now();
+        const valve = resumeUntil ? resumeUntil - Date.now() : SAFETY_VALVE_MS;
+        activatedAt = Date.now() - (SAFETY_VALVE_MS - valve);
+        remember(activatedAt + SAFETY_VALVE_MS);
+        if (resumeUntil) {
+            // A new page in the same session: the court resumes quietly.
+            seatJudge();
+            banner("⚖️ court resumes 🦆");
+            chaosTimer = setInterval(() => { parachute(); if (Math.random() < 0.3) quack(); }, CHAOS_TICK_MS);
+            safetyTimer = setTimeout(() => off("⚖️ court is adjourned 🦆"), valve);
+            onChange();
+            return;
+        }
         armAudioUnlock();
         seatJudge();
         fanfare();
@@ -479,9 +500,17 @@ const Parade = (() => {
         onChange();
     }
 
+    // Called by each content script once its hooks are set.
+    function resume() {
+        let until = 0;
+        try { until = Number(sessionStorage.getItem(RESUME_KEY)) || 0; } catch (_) {}
+        if (until > Date.now() + 1000) on(until); else remember(0);
+    }
+
     function off(text = "⚖️ court is adjourned 🦆") {
         if (!active) return;
         active = false;
+        remember(0);
         clearTimeout(safetyTimer);
         clearInterval(chaosTimer);
         safetyTimer = chaosTimer = null;
@@ -498,6 +527,7 @@ const Parade = (() => {
         },
         setHooks(hooks) { onChange = hooks.onChange || onChange; onStamp = hooks.onStamp || onStamp; },
         toggle() { active ? off() : on(); return this.state; },
+        resume,
         hit:    (el, text) => mark(el, "hit",    `🤡 ${text}`),
         saved:  (el)       => mark(el, "saved",  "⭐ SAVED BY A HERO"),
         near:   (el, text) => mark(el, "near",   `😬 BARELY SURVIVED — ${text}`),

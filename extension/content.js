@@ -26,6 +26,9 @@
  * Text correction is handled by grammar-fixer.js (GrammarFixer, PlaceholderProtector).
  * Slop scoring lives here.
  *
+ * v1.3.3 — the parade follows you through a site: a fresh page load
+ *          resumes it until its ten minutes are up, you turn it off, or
+ *          you leave the site.
  * v1.3.2 — other sites ask Chrome's built-in language detector first. A
  *          paragraph it is sure is not English is left alone (French "dont"
  *          survives); on a clearly non-English page, short comments are left
@@ -876,7 +879,7 @@
                 this.intersectionObserver.observe(el);
             });
 
-            console.log(`Purple Tuxedo of Shame v1.3.2 active`);
+            console.log(`Purple Tuxedo of Shame v1.3.3 active`);
             console.log(` Nuke: <${CONFIG.MIN_LENGTH} chars | Save: ${CONFIG.CHILD_MIN_LENGTH} chars / ${CONFIG.CHILD_MIN_WORDS} words`);
             console.log(` Score threshold: ${CONFIG.SCORE_NUKE_THRESHOLD} | Upvote immunity: ${CONFIG.USE_UPVOTE_IMMUNITY ? `>=${CONFIG.UPVOTE_THRESHOLD}` : 'OFF'}`);
         }
@@ -943,7 +946,7 @@
         });
     }
 
-    if (typeof Parade !== 'undefined') Parade.setHooks({ onChange: () => reevaluate() });
+    if (typeof Parade !== 'undefined') { Parade.setHooks({ onChange: () => reevaluate() }); Parade.resume(); }
 
     const processor = new CommentProcessor();
     loadSettings().then(() => processor.start());
@@ -962,7 +965,7 @@
                 return;
             }
             if (msg?.type !== 'tux-stats') return;
-            reply({ parade: typeof Parade !== 'undefined' ? Parade.state : null, version: '1.3.2', stats: STATS, config: Object.fromEntries(TUNABLE.map(k => [k, CONFIG[k]])),
+            reply({ parade: typeof Parade !== 'undefined' ? Parade.state : null, version: '1.3.3', stats: STATS, config: Object.fromEntries(TUNABLE.map(k => [k, CONFIG[k]])),
                     defaults: { ...DEFAULTS, slopWeights: DEFAULT_SLOP_WEIGHTS }, slopWeights: SLOP_WEIGHTS, comments: document.querySelectorAll('shreddit-comment').length });
         });
     }
