@@ -26,6 +26,18 @@
  * Text correction is handled by grammar-fixer.js (GrammarFixer, PlaceholderProtector).
  * Slop scoring lives here.
  *
+ * v1.3.7 — the slop score reads the author's own words again: grammar fixes
+ *          ran first and the score read the fixed text, so it barely saw
+ *          grammar at all. A hero reply that loads late still saves the
+ *          comment above it, and a comment Reddit later replaces with new
+ *          words is judged again. The parade gives back a page's own styles.
+ *          On other sites, nothing inside an editable region is ever written,
+ *          pausing cancels work already in flight, and the page-world hook is
+ *          installed only while "Fix grammar on other sites" is on. A short
+ *          English comment on an English page is fixed ("i love this").
+ *          Alt-click a comment's paragraph during the parade to report it.
+ *          Deleted and removed comments are no longer scored, shamed or
+ *          counted as heroes: their placeholder text is nobody's words.
  * v1.3.6 — a comment frame that grows while its tab is in the background
  *          now starts too (a slow poll backs up the resize event).
  * v1.3.5 — comment sections inside iframes (Disqus and friends) are reached:
@@ -522,10 +534,62 @@
         };
     }
     let STATS = freshStats();
+    // From the manifest, so a release cannot forget to bump it here. A
+    // userscript has no manifest.
+    const VERSION = (typeof chrome !== 'undefined' && chrome.runtime?.getManifest?.().version) || 'userscript';
 
     // The author's words as first seen. A re-evaluation after a settings
     // change must judge these, not the text the fixer has since cleaned up.
     const rawTextOf = new WeakMap();
+
+    // A deleted or removed comment has no author's words left. Its body slot
+    // is gone, so extraction falls through to the text-node walker and scores
+    // Reddit's own chrome and placeholder (a removed comment scored SLOP 23 and
+    // was "saved" by a hero). Such a comment is not judged,
+    // badged, hidden or counted as a hero. Its replies are judged as usual.
+    function isGone(comment) {
+        const author = (comment.getAttribute('author') || '').trim().toLowerCase();
+        return author === '[deleted]' || author === '[removed]'
+            || comment.hasAttribute('is-comment-deleted')
+            || comment.hasAttribute('deleted') || comment.hasAttribute('removed');
+    }
+    // Called before every grammar write, not only in processComment: fixing
+    // is eager (start(), handleMutations, Refix) and judging is lazy, so a
+    // capture in processComment read text the fixer had already changed and
+    // undercounted the very mistakes the slop score counts. An empty read is
+    // not cached: a hydrating comment is caught on its first non-empty pass.
+    function captureRaw(comment) {
+        if (rawTextOf.has(comment)) return;
+        const txt = extractCommentText(comment);
+        if (txt.trim()) rawTextOf.set(comment, txt);
+    }
+
+    // Reddit can replace a body after Tux has read and judged it, with
+    // different words (partial hydration). A put-back of the server text, or a
+    // body half fixed and half restored, fixes to the same text as the words
+    // first seen: that is the same revision, and the raw text stands. Anything
+    // else is a new revision: its words become the raw text, and a judged
+    // top-level comment must be judged again.
+    function revised(comment) {
+        const was = rawTextOf.get(comment);
+        if (!was) return false;
+        const now = extractCommentText(comment);
+        if (!now.trim() || now === was) return false;
+        const same = t => GrammarFixer.fix(t.replace(/\s+/g, ' ').trim());
+        if (same(now) === same(was)) return false;
+        rawTextOf.set(comment, now);
+        return comment.hasAttribute('data-processed') && !comment.parentElement?.closest('shreddit-comment');
+    }
+
+    // Top-level comments judged weak with no hero yet, and what was done to
+    // them. A reply that arrives or hydrates later can still save them
+    // (finding 3).
+    let unrescued = new WeakMap();
+
+    // What the fixer did to each paragraph, for the report card: the words
+    // before the first fix, the words now, and the corrections that got them
+    // there. Only fixed paragraphs are kept; any other is a possible miss.
+    const fixedBlocks = new WeakMap();
 
     // =========================================================================
     // REFIX: TEXT THAT CHANGES AFTER IT WAS FIXED
@@ -566,7 +630,15 @@
                 const body = commentBody(comment);       // the body, or what replaced it
                 if (body && (body.contains(node) || node.contains(body))) pending.add(comment);
             }
-            for (const c of pending) guarded('refix', c, () => NukerEngine.applyFixesToTextNodes(c));
+            // Read before the fixer writes: a new revision is judged on its own
+            // words. One re-judgment covers every revision in the batch.
+            let rejudge = false;
+            for (const c of pending) if (guarded('revise', c, () => revised(c))) rejudge = true;
+            for (const c of pending) {
+                guarded('refix', c, () => NukerEngine.applyFixesToTextNodes(c));
+                guarded('hero', c, () => NukerEngine.heroArrived(c));   // its text may only now be long enough
+            }
+            if (rejudge) reevaluate();
         },
     };
 
@@ -621,7 +693,6 @@
             // selectors below are only a fallback for older markup.
             const own = parseInt(comment.getAttribute('score'), 10);
             if (!isNaN(own)) return own;
-            STATS.failures.noScore++;
 
             const selectors = [
                 'faceplate-number[number]',
@@ -649,6 +720,7 @@
                 const num = parseInt(val, 10);
                 if (!isNaN(num)) return num;
             }
+            STATS.failures.noScore++;   // after every fallback, not the first (finding 7)
             return null;
         },
 
@@ -691,6 +763,7 @@
         },
 
         isStrongReply(replyElement) {
+            if (isGone(replyElement)) return false;
             const text  = extractCommentText(replyElement).replace(/\s+/g, ' ').trim();
             const words = text.split(/\s+/).filter(w => w.length > 0);
 
@@ -736,6 +809,7 @@
         },
 
         applyFixesToTextNodes(comment) {
+            captureRaw(comment);
             if (!CONFIG.ENABLE_GRAMMAR_FIXES) return;
             const body = commentBody(comment);
             if (!body) { STATS.failures.noBody++; return; }
@@ -755,7 +829,15 @@
                 if (texts.join('').trim().length < 3) continue;
                 const frozen = segments.map(s => s.frozen || !s.node);
                 const { parts, corrections } = GrammarFixer.fixSegments(texts, frozen);
-                if (corrections.length) STATS.paragraphsFixed++;
+                if (corrections.length) {
+                    STATS.paragraphsFixed++;
+                    const prev = fixedBlocks.get(block);
+                    fixedBlocks.set(block, {
+                        before: prev ? prev.before : texts.join(''),
+                        after: parts.join(''),
+                        corrections: (prev ? prev.corrections : []).concat(corrections).slice(-20),
+                    });
+                }
                 parts.forEach((text, k) => {
                     if (segments[k].node && text !== texts[k]) {
                         Refix.produced.set(segments[k].node, text);
@@ -765,16 +847,44 @@
             }
         },
 
+        // A strong reply that turns up after its parent was judged (Reddit
+        // loads and hydrates replies late) saves the parent then, exactly as
+        // it would have at judging time: verdict undone, tuxedo and hero
+        // badge on, the stats moved from hidden or spared to tuxedos.
+        heroArrived(reply) {
+            const pid = reply.getAttribute('parentid');
+            if (!pid) return;
+            const parent = reply.parentElement?.closest(`shreddit-comment[thingid="${CSS.escape(pid)}"]`);
+            const was = parent && unrescued.get(parent);
+            if (!was || !this.isStrongReply(reply)) return;
+            unrescued.delete(parent);
+            const key = was.reason.split(' ')[0];
+            if (was.how === 'spared') STATS.sparedByUpvotes--;
+            else STATS.hidden[key] = Math.max(0, (STATS.hidden[key] || 0) - 1);
+            if (was.how === 'hidden') {
+                parent.classList.remove('nuked-comment');
+                const ph = parent.previousElementSibling;
+                if (ph?.classList.contains('nuker-placeholder')) ph.remove();
+            }
+            this.applyShameBadge(parent);
+            this.applyHeroBadge(reply);
+            if (paradeOn()) Parade.saved(parent);
+        },
+
         processComment(comment) {
             if (comment.hasAttribute('data-processed')) return;
+
+            if (isGone(comment)) {
+                STATS.gone = (STATS.gone || 0) + 1;
+                if (paradeOn()) Parade.dim(comment);
+                comment.setAttribute('data-processed', 'true');
+                return;
+            }
 
             // Raw text first: the score judges what the author wrote, not
             // what the fixer made of it. An empty read is never cached: it is
             // a comment still hydrating far more often than a final answer.
-            if (!rawTextOf.has(comment)) {
-                const txt = extractCommentText(comment);
-                if (txt.trim()) rawTextOf.set(comment, txt);
-            }
+            captureRaw(comment);
             const rawText   = rawTextOf.get(comment) || '';
             const cleanText = rawText.replace(/\s+/g, ' ').trim();
 
@@ -833,12 +943,15 @@
                     if (paradeOn()) Parade.saved(comment);
                 } else if (this.hasUpvoteImmunity(comment)) {
                     STATS.sparedByUpvotes++;
+                    unrescued.set(comment, { how: 'spared', reason });
                     if (paradeOn()) Parade.spared(comment, stampText(reason));
                 } else if (paradeOn()) {
                     // The parade shows the verdict instead of carrying it out.
                     STATS.hidden[reason.split(' ')[0]]++;
+                    unrescued.set(comment, { how: 'hit', reason });
                     Parade.hit(comment, stampText(reason));
                 } else {
+                    unrescued.set(comment, { how: 'hidden', reason });
                     this.hideComment(comment, reason);
                 }
             } else if (paradeOn()) {
@@ -886,7 +999,7 @@
                 this.intersectionObserver.observe(el);
             });
 
-            console.log(`Purple Tuxedo of Shame v1.3.6 active`);
+            console.log(`Purple Tuxedo of Shame v${VERSION} active`);
             console.log(` Nuke: <${CONFIG.MIN_LENGTH} chars | Save: ${CONFIG.CHILD_MIN_LENGTH} chars / ${CONFIG.CHILD_MIN_WORDS} words`);
             console.log(` Score threshold: ${CONFIG.SCORE_NUKE_THRESHOLD} | Upvote immunity: ${CONFIG.USE_UPVOTE_IMMUNITY ? `>=${CONFIG.UPVOTE_THRESHOLD}` : 'OFF'}`);
         }
@@ -905,6 +1018,7 @@
                     for (const el of found) {
                         this.intersectionObserver.observe(el);   // first: a failed fix is still judged
                         guarded('fix', el, () => NukerEngine.fixComment(el));   // now, not when it scrolls near
+                        guarded('hero', el, () => NukerEngine.heroArrived(el));
                     }
                 }
             }
@@ -947,6 +1061,7 @@
             el.classList.remove('nuked-comment', 'hero-reply'));
         if (typeof Parade !== 'undefined') Parade.clear();
         STATS = freshStats();
+        unrescued = new WeakMap();
         document.querySelectorAll('shreddit-comment[data-processed]').forEach(el => {
             el.removeAttribute('data-processed');
             NukerEngine.processComment(el);
@@ -954,6 +1069,29 @@
     }
 
     if (typeof Parade !== 'undefined') { Parade.setHooks({ onChange: () => reevaluate() }); Parade.resume(); }
+
+    // Alt-click a comment's paragraph while the parade runs to report it: a
+    // fix Tux made, or one it missed. The card and basket are
+    // everywhere/report.js, shared with other sites.
+    function onAltClick(e) {
+        if (!e.altKey || typeof Parade === 'undefined' || !Parade.active || typeof Report === 'undefined') return;
+        const path = e.composedPath();
+        if (path.some(n => n.hasAttribute?.('data-grammar-fixer-ui'))) return;
+        const comment = path.find(n => n.tagName === 'SHREDDIT-COMMENT');
+        const body = comment && commentBody(comment);
+        const target = path[0];
+        if (!body || target?.nodeType !== Node.ELEMENT_NODE) return;
+        const textNode = document.createTreeWalker(target, NodeFilter.SHOW_TEXT).nextNode();
+        if (!textNode || !body.contains(textNode)) return;
+        const block = blockOf(textNode, body);
+        e.preventDefault();
+        e.stopPropagation();
+        const rec = fixedBlocks.get(block);
+        if (rec) return Report.open(block, { kind: 'fixed', ...rec }, e.clientX, e.clientY);
+        const text = collectSegments(block).map(seg => seg.text).join('').trim();
+        if (text) Report.open(block, { kind: 'missed', before: text, after: text, corrections: [] }, e.clientX, e.clientY);
+    }
+    document.addEventListener('click', onAltClick, true);
 
     const processor = new CommentProcessor();
     loadSettings().then(() => processor.start());
@@ -972,7 +1110,7 @@
                 return;
             }
             if (msg?.type !== 'tux-stats') return;
-            reply({ parade: typeof Parade !== 'undefined' ? Parade.state : null, version: '1.3.6', stats: STATS, config: Object.fromEntries(TUNABLE.map(k => [k, CONFIG[k]])),
+            reply({ parade: typeof Parade !== 'undefined' ? Parade.state : null, version: VERSION, stats: STATS, config: Object.fromEntries(TUNABLE.map(k => [k, CONFIG[k]])),
                     defaults: { ...DEFAULTS, slopWeights: DEFAULT_SLOP_WEIGHTS }, slopWeights: SLOP_WEIGHTS, comments: document.querySelectorAll('shreddit-comment').length });
         });
     }

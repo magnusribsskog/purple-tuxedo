@@ -28,7 +28,7 @@
         'textarea', 'input', 'select', 'option', 'button',
         'pre', 'code', 'kbd', 'samp',
         'a',
-        '[contenteditable=""]', '[contenteditable="true"]',
+        '[contenteditable]',
         '[role="textbox"]',
         '[aria-hidden="true"]',
         '[data-grammar-fixer-ui]'
@@ -37,6 +37,7 @@
     const state = {
         enabled: true,
         pausedUntil: 0,
+        eligibilityGeneration: 0,
         queue: new Set(),
         flushTimer: null,
         lastProduced: new WeakMap(),
@@ -67,7 +68,8 @@
     //                                  not English; otherwise unknown (the
     //                                  default pack and its own guards)
     // The page verdict needs long main text, is corroborated by <html lang>
-    // where present, is never English, and is recomputed per route.
+    // where present, and is recomputed per route. It is English only when
+    // <html lang> and the text both say so.
     const Lang = {
         verdicts: new WeakMap(),
         page: null,
@@ -89,8 +91,12 @@
             if (sample.split(/\s+/).length < 60) { this.page = null; return Promise.resolve(undefined); }
             this.page = (async () => {
                 const r = await this.detect(sample);
-                if (!r || !r.isReliable || this.english(r)) return undefined;
+                if (!r || !r.isReliable) return undefined;
                 const declared = (document.documentElement.lang || '').toLowerCase();
+                // English only when the page says so twice, in its lang
+                // attribute and in its text. That verdict lets the engine fix
+                // a short "i love this".
+                if (this.english(r)) return declared.startsWith('en') ? 'en' : undefined;
                 if (declared.startsWith('en')) return undefined;   // the page and its text disagree
                 return r.languages[0].language;
             })();
@@ -116,12 +122,19 @@
         return !state.enabled || Date.now() < state.pausedUntil;
     }
 
+    function isEditable(element) {
+        return document.designMode.toLowerCase() === 'on' ||
+            !!element?.isContentEditable ||
+            !!element?.closest('[contenteditable]');
+    }
+
     function shouldSkipTextNode(node) {
         if (!node || node.nodeType !== Node.TEXT_NODE) return true;
         if (!node.nodeValue || !node.nodeValue.trim()) return true;
 
         const parent = node.parentElement;
         if (!parent) return true;
+        if (isEditable(parent)) return true;
         if (parent.closest(SKIP_SELECTOR)) return true;
 
         // Do not touch invisible layout fragments.
@@ -203,7 +216,8 @@
                     // processBlock has already refused blocks inside anything on
                     // the skip list, so a match here is inside the block: a
                     // link, code, or an editable span. Read, never written.
-                    const frozen = !!child.parentElement?.closest(SKIP_SELECTOR);
+                    const frozen = isEditable(child.parentElement) ||
+                        !!child.parentElement?.closest(SKIP_SELECTOR);
                     segments.push({ node: child, text: child.nodeValue, frozen });
                 } else if (child.nodeType === Node.ELEMENT_NODE) {
                     if (child.tagName === 'BR' || !isInline(child)) {
@@ -332,7 +346,9 @@
     }
 
     async function processBlock(block) {
-        if (!block || !block.isConnected) return;
+        if (!block || !block.isConnected || isPaused() ||
+            isEditable(block.nodeType === Node.ELEMENT_NODE ? block : block.parentElement)) return;
+        const generation = state.eligibilityGeneration;
         // A block that is itself a link, code, input or editable region is
         // outside the correction surface as a whole.
         if (block.nodeType === Node.ELEMENT_NODE &&
@@ -355,7 +371,9 @@
         const language = await Lang.hintFor(block, joined);
         // The page may have rewritten the block while we waited; if so, its
         // own mutation has queued it again.
-        if (!block.isConnected ||
+        if (!block.isConnected || isPaused() ||
+            generation !== state.eligibilityGeneration ||
+            isEditable(block.nodeType === Node.ELEMENT_NODE ? block : block.parentElement) ||
             collectSegments(block).map(seg => seg.text).join('') !== joined) return;
         // A language without a pack is left alone entirely.
         if (language && !GrammarFixer.packFor(language)) { state.metrics.languageSkips++; return; }
@@ -371,6 +389,7 @@
         result.parts.forEach((text, k) => {
             const node = segments[k].node;
             if (!node || text === texts[k]) return;
+            if (shouldSkipTextNode(node)) return;
             // Under a right-to-left override the reader is not reading these
             // characters in this order; leave that node alone.
             if (displayIsReversed(node)) return;
@@ -914,6 +933,7 @@
             .addEventListener(
                 'click',
                 () => {
+                    state.eligibilityGeneration++;
                     state.queue.clear();
 
                     state.pausedUntil =
@@ -931,6 +951,7 @@
                                 state.pausedUntil
                         ) {
                             state.pausedUntil = 0;
+                            state.eligibilityGeneration++;
 
                             enqueueTree(
                                 document.documentElement ||
@@ -948,6 +969,7 @@
             .addEventListener(
                 'click',
                 async () => {
+                    state.eligibilityGeneration++;
                     state.enabled =
                         !state.enabled;
 

@@ -214,7 +214,7 @@ const EnglishPack = {
         return joinKnownContractions(protectedText, this.dictionary);
     },
 
-    rewrite(readableText, map) {
+    rewrite(readableText, map, { confirmed = false } = {}) {
         if (!this.dictRegex) this.init();
         // No whole-text language gate: it skipped
         // ordinary casual English wholesale. Only the two words that are
@@ -254,7 +254,16 @@ const EnglishPack = {
         const words = pronounSource.trim().split(/\s+/);
         // Curly apostrophes and emoji are not a language signal; letters
         // outside ASCII (æ, ø, ü …) are.
-        if (words.length >= 6 && this.looksLikeEnglish(readableText) &&
+        // On text confirmed English (the paragraph, or a page that says so in
+        // both its lang attribute and its text) a short comment is enough:
+        // "i love this". It still needs an English
+        // word of its own besides "i", so a short "bor i oslo" stays. "at" is
+        // Norwegian too ("that"), so it is no signal here: "tror at i dag".
+        const signal = w => w !== 'i' && w !== 'at' && this.tier1Stopwords.has(w);
+        const floorMet = words.length >= 6 ||
+            (confirmed && words.length >= 2 &&
+             words.some(w => signal(w.toLowerCase().replace(/[^a-z']/g, ''))));
+        if (floorMet && this.looksLikeEnglish(readableText) &&
             !/(?=[^\x00-\x7F])\p{L}/u.test(pronounSource)) {
             // "i." and "i)" open roman-numeral lists ("*i. You must be…").
             fixed = fixed.replace(/\bi\b(?![.)])/g, 'I');
@@ -350,7 +359,9 @@ const GrammarFixer = {
 
         const { text: protectedText, map } = PlaceholderProtector.replaceProtected(text);
         const readableText = pack.prepare ? pack.prepare(protectedText) : protectedText;
-        return PlaceholderProtector.restore(pack.rewrite(readableText, map), map);
+        // A code (not an omitted hint) is a confirmed verdict for this text.
+        const confirmed = language !== undefined && language !== null;
+        return PlaceholderProtector.restore(pack.rewrite(readableText, map, { confirmed }), map);
     },
 
     /*

@@ -141,7 +141,18 @@ const otherSites = document.getElementById('otherSites');
 chrome.storage.local.get('fixOtherSites').then(({ fixOtherSites }) => {
     otherSites.checked = fixOtherSites === true;
 });
-otherSites.addEventListener('change', () => chrome.storage.local.set({ fixOtherSites: otherSites.checked }));
+otherSites.addEventListener('change', async () => {
+    const enabled = otherSites.checked;
+    try {
+        await chrome.storage.local.set({ fixOtherSites: enabled });
+        const result = await chrome.runtime.sendMessage({ type: 'gf-sync-shadow-hook' });
+        if (!result?.ok) throw new Error(result?.error || 'shadow registration failed');
+    } catch (err) {
+        otherSites.checked = !enabled;
+        await chrome.storage.local.set({ fixOtherSites: !enabled });
+        console.error('[Grammar Fixer] cross-site setting failed', err);
+    }
+});
 
 // The parade off Reddit: only answered where the fixer is switched on and
 // running (everywhere/content.js). On Reddit, and where it is off, no answer.

@@ -297,6 +297,20 @@ const Parade = (() => {
         },
     };
     const STYLED = ["outline", "outline-offset", "box-shadow", "position", "filter", "transition"];
+    // The inline values an element had before the parade first touched it,
+    // with their priority. clear() puts these back rather than removing the
+    // properties, which erased a page's own inline position or filter.
+    const originals = new Map();
+    function keepStyles(el) {
+        if (originals.has(el)) return;
+        originals.set(el, STYLED.map(p => [p, el.style.getPropertyValue(p), el.style.getPropertyPriority(p)]));
+    }
+    function giveStylesBack(el) {
+        const saved = originals.get(el);
+        if (!saved) return;
+        for (const [p, v, pri] of saved) v ? el.style.setProperty(p, v, pri) : el.style.removeProperty(p);
+        originals.delete(el);
+    }
 
     const marked = new Map();   // comment → { stampEl, tier, text }
     const dimmed = new Set();
@@ -415,6 +429,7 @@ const Parade = (() => {
         }
         try {
             const style = TIER_STYLE[tier];
+            keepStyles(el);
             dimmed.delete(el);
             el.style.removeProperty("filter");
             el.style.setProperty("outline", style.outline, "important");
@@ -450,6 +465,7 @@ const Parade = (() => {
     function dim(el) {
         if (!active || dimmed.has(el) || marked.has(el)) return;
         try {
+            keepStyles(el);
             el.style.setProperty("filter", "grayscale(1) brightness(0.55)", "important");
             el.style.setProperty("transition", "filter 0.4s", "important");
             dimmed.add(el);
@@ -458,13 +474,14 @@ const Parade = (() => {
 
     function clear() {
         dropLayer();
-        for (const el of dimmed) for (const p of STYLED) el.style.removeProperty(p);
+        for (const el of dimmed) giveStylesBack(el);
         dimmed.clear();
         for (const [el, m] of marked) {
             m.stampEl.remove();
-            for (const p of STYLED) el.style.removeProperty(p);
+            giveStylesBack(el);
         }
         marked.clear();
+        originals.clear();
     }
 
     // ======================== LIFECYCLE ========================
