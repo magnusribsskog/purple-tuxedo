@@ -296,20 +296,49 @@ const Parade = (() => {
             tilt: -3, mood: "skeptical",
         },
     };
-    const STYLED = ["outline", "outline-offset", "box-shadow", "position", "filter", "transition"];
-    // The inline values an element had before the parade first touched it,
-    // with their priority. clear() puts these back rather than removing the
-    // properties, which erased a page's own inline position or filter.
-    const originals = new Map();
-    function keepStyles(el) {
-        if (originals.has(el)) return;
-        originals.set(el, STYLED.map(p => [p, el.style.getPropertyValue(p), el.style.getPropertyPriority(p)]));
+    // Track only the properties we touch, with their inline value and priority.
+    // Restoring a snapshot unconditionally would overwrite newer page styles.
+    const originals = new Map(); // element -> Map(property -> { before, written })
+    function inlineStyle(el, property) {
+        return [el.style.getPropertyValue(property), el.style.getPropertyPriority(property)];
+    }
+    function sameStyle(a, b) {
+        return a[0] === b[0] && a[1] === b[1];
+    }
+    function setParadeStyle(el, property, value, priority = "") {
+        let saved = originals.get(el);
+        if (!saved) { saved = new Map(); originals.set(el, saved); }
+        const current = inlineStyle(el, property);
+        let entry = saved.get(property);
+        if (!entry) {
+            entry = { before: current, written: null };
+            saved.set(property, entry);
+        } else if (!sameStyle(current, entry.written)) {
+            // The site wrote a new value before this subsequent parade write.
+            // Restore that newer value instead of the original snapshot.
+            entry.before = current;
+        }
+        el.style.setProperty(property, value, priority);
+        entry.written = inlineStyle(el, property); // normalized by the browser
+    }
+    function giveStyleBack(el, property) {
+        const saved = originals.get(el);
+        const entry = saved?.get(property);
+        if (!entry) return;
+        // When the site has changed the property since our last write, its
+        // current value wins. Values identical to ours cannot be distinguished.
+        if (sameStyle(inlineStyle(el, property), entry.written)) {
+            const [value, priority] = entry.before;
+            if (value) el.style.setProperty(property, value, priority);
+            else el.style.removeProperty(property);
+        }
+        saved.delete(property);
+        if (!saved.size) originals.delete(el);
     }
     function giveStylesBack(el) {
         const saved = originals.get(el);
         if (!saved) return;
-        for (const [p, v, pri] of saved) v ? el.style.setProperty(p, v, pri) : el.style.removeProperty(p);
-        originals.delete(el);
+        for (const property of [...saved.keys()]) giveStyleBack(el, property);
     }
 
     const marked = new Map();   // comment → { stampEl, tier, text }
@@ -429,13 +458,16 @@ const Parade = (() => {
         }
         try {
             const style = TIER_STYLE[tier];
-            keepStyles(el);
-            dimmed.delete(el);
-            el.style.removeProperty("filter");
-            el.style.setProperty("outline", style.outline, "important");
-            el.style.setProperty("outline-offset", "4px", "important");
-            el.style.setProperty("box-shadow", style.glow, "important");
-            el.style.setProperty("position", "relative", "important");
+            if (dimmed.delete(el)) {
+                // Stamping ends dimming, but must not erase a newer site
+                // filter or transition written while dimmed.
+                giveStyleBack(el, "filter");
+                giveStyleBack(el, "transition");
+            }
+            setParadeStyle(el, "outline", style.outline, "important");
+            setParadeStyle(el, "outline-offset", "4px", "important");
+            setParadeStyle(el, "box-shadow", style.glow, "important");
+            setParadeStyle(el, "position", "relative", "important");
 
             const stampEl = document.createElement("div");
             stampEl.className = "tux-parade-stamp";
@@ -465,23 +497,19 @@ const Parade = (() => {
     function dim(el) {
         if (!active || dimmed.has(el) || marked.has(el)) return;
         try {
-            keepStyles(el);
-            el.style.setProperty("filter", "grayscale(1) brightness(0.55)", "important");
-            el.style.setProperty("transition", "filter 0.4s", "important");
+            setParadeStyle(el, "filter", "grayscale(1) brightness(0.55)", "important");
+            setParadeStyle(el, "transition", "filter 0.4s", "important");
             dimmed.add(el);
         } catch (e) { /* garnish */ }
     }
 
     function clear() {
         dropLayer();
-        for (const el of dimmed) giveStylesBack(el);
-        dimmed.clear();
-        for (const [el, m] of marked) {
-            m.stampEl.remove();
-            giveStylesBack(el);
-        }
+        for (const [, m] of marked) m.stampEl.remove();
         marked.clear();
-        originals.clear();
+        dimmed.clear();
+        // Also restore elements where stamping failed after a partial write.
+        for (const el of [...originals.keys()]) giveStylesBack(el);
     }
 
     // ======================== LIFECYCLE ========================
